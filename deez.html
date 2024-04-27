@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+
+    <div id="crosshair"></div>
+
+
+    <div id="blocker">
+        <div id="instructions">
+            <h2>
+                Click to play
+            </h2>
+            <br><br>
+            <p>WASD to move</p>
+            <p>Space to jump (and fly)</p>
+            <p>Shift to sprint and increase pull strength</p>
+            <p>E to grab objects, press again to drop held object</p>
+            <p>Scroll to increase grab distance</p>
+            <p>R to reset</p>
+            <p>Esc for menu</p>
+        </div>
+    </div>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 2;
+            pointer-events: none;
+            color: white;
+        }
+        
+        #blocker p {
+            font-size: 2em;
+            line-height: 2em;
+        }
+
+        #blocker h2 {
+            font-size: 3em;
+        }
+
+        #instructions {
+            width: 100%;
+            height: 100%;
+
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+
+            text-align: center;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid #000;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            width: fit-content;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            background: #ffffff82;
+            border: none;
+            border-radius: 50%;
+            z-index: 2;
+            margin-left: -5px;
+            margin-top: -5px;
+        }
+    </style>
+</body>
+<script src="./jsm/libs/ammo.js"></script>
+<!-- <script src="./jsm/objects/Water.js"></script>
+<script src="./jsm/objects/Reflector.js"></script> -->
+<script type="importmap">
+    {
+        "imports": {
+            "three": "../build/three.module.js",
+            "three/addons/": "./jsm/"
+        }
+    }
+</script>
+
+<!-- todo:
+    add enable3d and replace ammo with enable3d :(
+-->
+
+
+<script type="module">
+    
+    import * as THREE from 'three';
+    // import { Water } from'./jsm/objects/Water.js';
+    // import { Reflector } from './jsm/objects/Reflector.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { PointerLockControls } from './PointerLockControls.js';
+    import { AmmoPhysics } from './AmmoPhysics.js';
+    import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+
+    // import { ENABLE3D } from './fin/enable3d.ammoPhysics.0.25.4.min.js';
+    // import * as Ammo from './jsm/libs/ammo.js';
+    import Stats from 'three/addons/libs/stats.module.js';
+    import { EffectComposer } from './jsm/postprocessing/EffectComposer.js';
+    import { OutlinePass } from './jsm/postprocessing/OutlinePass.js';
+    import { RenderPass } from './jsm/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from './jsm/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from './jsm/postprocessing/ShaderPass.js';
+    import { GLTFLoader } from './jsm/loaders/GLTFLoader.js';
+
+    // const { AmmoPhysics, PhysicsLoader } = ENABLE3D
+    
+
+    let camera, scene, renderer, stats, controls;
+    let physics, position;
+    let composer, bloomPass, outlinePass;
+
+    let player;
+    let head;
+
+    let movingCube;
+    let movingCubeExists = false;
+
+    let prevTime = performance.now();
+
+    let keys = {};
+    let keyIsDown = false;
+
+    let isPaused = false;
+
+
+    init()
+
+    // setInterval(() => {
+    //     let cube = createCube({x: 0.25, y: 0.25, z: 0.25}, {x: 3, y: 5, z: 0}, cubeMaterial, 1);
+    //     physics.addMesh( cube, 1 );
+    // }, 2000
+    //     );
+
+    async function init() {
+        
+        // let physics = await AmmoPhysics();
+        // let position = new THREE.Vector3();
+
+        
+
+        cameraSetup();
+        sceneSetup();
+        renderSetup();
+
+        lightSetup();
+        await physicsSetup();
+
+        await createObjects();
+        createPlayer();
+
+        keyListener();
+        
+        animate();
+
+        // call createcube every 2 seconds
+
+    }
+
+    let cubeMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+    let feet;
+
+    async function createPlayer(){
+
+        player = createCube({x: 0.5, y: 1, z: 0.5}, {x: 0, y: 1, z: 0}, new THREE.MeshStandardMaterial( { color: 0xff0000 } ));
+        // let playerShape = physics.getShape(player.geometry)
+        let playerMass = 1;
+
+        player.forward = new THREE.Vector3(0, 0, -1);
+        player.backward = new THREE.Vector3(0, 0, 1);
+        player.left = new THREE.Vector3(-1, 0, 0);
+        player.right = new THREE.Vector3(1, 0, 0);
+        player.up = new THREE.Vector3(0, 1, 0);
+        player.down = new THREE.Vector3(0, -1, 0);
+        player.name = 'player';
+
+
+        physics.addMesh(player, playerMass);
+        let body = physics.meshMap.get(player)
+        body.setFriction(1);
+        body.setSleepingThresholds(0, 0);
+        body.setActivationState(4);
+
+        physics.setMeshPosition(player, {x:1, y: 5, z: 3});
+
+        let lockedYQuaternion = new THREE.Quaternion();
+        lockedYQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0);
+
+        physics.lockRotation(player, lockedYQuaternion);
+
+        head = createCube({x: 0.6, y: 0.6, z: 0.6}, {x: 0, y: .3, z: 0}, new THREE.MeshStandardMaterial( { color: 0x00ff00 } ));
+        head.name = 'head';
+        
+
+
+        player.add(head);
+
+        let feetMaterial = new THREE.ShaderMaterial({
+            vertexShader: `
+                varying vec2 vUv;
+
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                varying vec2 vUv;
+
+                void main() {
+                    float distanceFromCenter = length(vUv - 0.5);
+                    float opacity = .8 - smoothstep(0.0, 0.8, distanceFromCenter);
+
+                    gl_FragColor = vec4(.2, .2, .2, opacity);
+                }
+            `,
+            transparent: true
+        });
+
+        // feet = createCube(
+        //     {x: 0.5, y: 0.1, z: 0.5}, 
+        //     {x: 0, y: -0.5, z: 0}, 
+        //     new THREE.MeshStandardMaterial( { color: 0x00ff00 } ),
+        // );
+        // player.add(feet);
+
+        // physics.addMesh(feet, 0);
+        
+        // physics.lockRotation(feet, lockedYQuaternion);
+        // physics.setMeshPosition(feet, {x: 0, y: -.5, z: 0});
+
+    }
+
+    let isMouseDown = false;
+    let scrollDirection = 0; // 0: no scroll, 1: scroll up, -1: scroll down
+    let mouseBtn = null;
+
+    const blocker = document.getElementById( 'blocker' );
+    const instructions = document.getElementById( 'instructions' );
+    
+
+    function keyListener() {
+        // window.onbeforeunload = function (e) {
+        //     // Cancel the event
+        //     e.preventDefault();
+
+        //     // Chrome requires returnValue to be set
+        //     e.returnValue = 'Really want to quit the game?';
+        // };
+
+        let keyDownListener = function(event) {
+            event.preventDefault();
+            // console.log(event.code);
+            keys[event.code] = true;
+        };
+
+        let keyUpListener = function(event) {
+            event.preventDefault();
+            // console.log(event.code);
+            keys[event.code] = false;
+        };
+
+        window.addEventListener('click', function () {
+            isPaused = false;
+            // console.log(physics.paused)
+            // physics.paused = false;
+            
+            if (!controls.isLocked) {
+                controls.lock();
+                window.addEventListener('keydown', keyDownListener);
+                window.addEventListener('keyup', keyUpListener);
+                animate();
+                
+            }
+
+            let playerBody = physics.meshMap.get(player);
+            if(playerBody)  playerBody.activate();
+
+
+            window.addEventListener('mousedown', function(event) {
+                isMouseDown = true;
+                console.log('mouse down');
+
+                // Log which button was pressed
+                switch (event.button) {
+                    case 0:
+                        console.log('Left button clicked');
+                        mouseBtn = 0;
+                        break;
+                    case 1:
+                        console.log('Middle button clicked');
+                        mouseBtn = 1;
+                        break;
+                    case 2:
+                        console.log('Right button clicked');
+                        mouseBtn = 2;
+                        break;
+                    default:
+                        console.log('Unknown button clicked');
+                        break;
+                }
+            });
+
+            window.addEventListener('mouseup', function() {
+                isMouseDown = false;
+                mouseBtn = null;
+            });
+            
+        }, false);
+
+        controls.addEventListener('unlock', function(){
+            blocker.style.display = 'block';
+            instructions.style.display = '';
+            window.removeEventListener('keydown', keyDownListener);
+            window.removeEventListener('keyup', keyUpListener);
+            isPaused = true;
+            
+        });
+
+        controls.addEventListener( 'lock', function () {
+
+            instructions.style.display = 'none';
+            blocker.style.display = 'none';
+            
+
+        });
+        
+        window.addEventListener('wheel', function(event) {
+            if (event.deltaY < 0) {
+                scrollDirection = 1; // scrolling up
+            } else if (event.deltaY > 0) {
+                scrollDirection = -1; // scrolling down
+            }
+        });
+
+        
+
+        // instructions.addEventListener( 'click', function () {
+
+        //     controls.lock();
+
+        // });
+    }
+    
+
+    function cameraSetup(){
+        camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 1000 );
+        camera.position.set( - 1, 1.5, 2 );
+        camera.lookAt( 0, 0.5, 0 );
+
+        controls = new PointerLockControls(camera, document.body);
+       
+        
+
+        // controls = new OrbitControls(camera, renderer.domElement);
+        // controls.target.set(0, 0.5, 0);
+        // controls.enablePan = false; // Disable panning
+        // controls.maxPolarAngle = (Math.PI / 2); // Prevent the camera from going under the ground
+        // controls.minDistance = 5; // Minimum distance the camera can be from the target
+        // controls.maxDistance = 20;
+        // controls.update();
+    }
+
+    
+
+    function sceneSetup(){
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color( 0x88ccee );
+        // scene.fog = new THREE.FogExp2( 0xbfa18a, 0, 50 );
+        let grid = new THREE.GridHelper( 10, 10 );
+        scene.add( grid );
+
+       
+
+        
+        
+    }
+
+    function lightSetup(){
+        
+
+        // const hemiLight = new THREE.HemisphereLight();
+        // hemiLight.position.set( 0, 20, 0 );
+        // hemiLight.intensity = 1;
+
+        // scene.add( hemiLight );
+
+        // const dirLight = new THREE.DirectionalLight( 0xffffff, 3 );
+        // dirLight.position.set( 5, 5, 5 );
+        // dirLight.target.position.set(0, 0, 0);
+        // dirLight.castShadow = true;
+        // dirLight.shadow.camera.zoom = 2;
+        // scene.add( dirLight );
+        // const sunLight = new THREE.DirectionalLight(0xDDDDCC, 1);
+        
+        // sunLight.rotation.x = Math.PI / 2;
+        // sunLight.target.position.set(1, 1, 0);
+        // sunLight.castShadow = true;
+        // sunLight.shadow.camera.near = 0.01;
+        // sunLight.shadow.camera.far = 1000;
+        // sunLight.shadow.camera.right = 30;
+        // sunLight.shadow.camera.left = - 30;
+        // sunLight.shadow.camera.top	= 30;
+        // sunLight.shadow.camera.bottom = - 30;
+        // sunLight.shadow.mapSize.width = 3096;
+        // sunLight.shadow.mapSize.height = 3096;
+        // sunLight.shadow.radius = 6;
+        // sunLight.shadow.bias = - 0.00006;
+        // sunLight.position.set(0, 10, 20);
+        // scene.add(sunLight);
+
+        // let sunHelper = new THREE.DirectionalLightHelper(sunLight, 1);
+        // scene.add(sunHelper);
+
+           
+    }
+
+    async function physicsSetup(){
+
+        console.log(physics = await AmmoPhysics())
+        await physics.ready
+        console.log('Physics ready')
+    }
+
+    async function createObjects(){
+        const material = new THREE.MeshStandardMaterial();
+        
+        let cube1 = createCube({x: 0.25, y: 0.25, z: 0.25}, {x: 3, y: 5, z: 0}, material, 1);
+        physics.addMesh( cube1, 1 );
+        cube1.name = 'cube1'
+
+        let floorMaterial = new THREE.MeshStandardMaterial({
+            color: 0x444444,
+            roughness: 0.5,
+            metalness: 0.5,
+            transparent: true,
+            opacity: 0.5
+        });
+
+        const floor = new THREE.Mesh(
+            new THREE.BoxGeometry( 10, 5, 10 ),
+            floorMaterial
+            // reflectMaterial
+        );
+        floor.position.y = - 2.5;
+        floor.receiveShadow = true;
+        // floor.castShadow = true;
+        floor.userData.physics = { mass: 0 };
+
+        // scene.add( floor );
+
+        // physics.addMesh( floor, 0 );
+
+        let cube2 = createCube({x: 0.25, y: 0.25, z: 0.25}, {x: 3, y: 7, z: 0}, material, 1);
+        physics.addMesh( cube2, 1 );
+        cube2.name = 'cube2'
+
+
+        // for(let i = 0; i < 10; i++){
+        //     let cube = createCube(.25, {x: 0, y: 5 + i, z: 0}, material, 1);
+        // }
+
+        let cube3 = createCube({x: 1, y: 1, z: 1}, {x: 2, y:5, z: 0}, material, 1);
+        physics.addMesh( cube3, 1 );
+        cube3.name = 'cube3'
+
+        movingCube = createCube({x: 1, y: 1, z: 1}, {x: 0, y: 0, z: 0}, material, 1);
+        physics.addMesh( movingCube, 1 );
+        movingCubeExists = true;
+        movingCube.name = 'movingCube';
+
+        let movingCubeBody = physics.meshMap.get(movingCube);
+        movingCubeBody.setSleepingThresholds(0, 0);
+        movingCubeBody.setActivationState(4);
+
+        let angledQuaternion = new THREE.Quaternion();
+        angledQuaternion.setFromAxisAngle(new THREE.Vector3(.5, 1, 0), Math.PI / 4);
+
+        physics.setRotation(movingCube, angledQuaternion);
+
+        let resetQuaternion = new THREE.Quaternion();
+        resetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 0), 0);
+
+        // physics.lockRotation(movingCube, resetQuaternion);
+
+        let gltfrotation = new THREE.Quaternion();
+        gltfrotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+
+        // loadGLTFModel('./deez/assets/chest/chest.glb', scene, 4, {x: 0, y: 0, z: 3}, gltfrotation);
+        loadGLTFModel('./deez/assets/sworddisp.glb', scene, 4, {x: 0, y: 0, z: 0}, gltfrotation, true, 1)
+        loadGLTFModel('./deez/assets/cardload.glb', scene, 4, {x: 0, y: 0, z: 0}, gltfrotation, true, 1)
+        loadGLTFModel('./deez/assets/stuff2.glb', scene, 1, {x: 0, y: -3, z: 0}, new THREE.Quaternion(), true, 0);
+        // physMeshFromGLTF(map, 1, {x: 0, y: 0, z: 0});
+
+        // loadGLTFModel('./models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf', scene, 1, {x: 4, y: 3, z: 3}, gltfrotation);
+
+
+        
+    }
+
+   
+
+    function createCube(size, position, material, mass){
+        const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.set(position.x, position.y, position.z);
+        cube.castShadow = true;
+        cube.receiveShadow = true;
+        cube.userData.physics = { mass: mass };
+        scene.add(cube);
+        
+        return cube;
+    }
+
+    function renderSetup(){
+        renderer = new THREE.WebGLRenderer( { antialias: true } );
+        renderer.setPixelRatio( window.devicePixelRatio );
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1;
+        
+        document.body.appendChild( renderer.domElement );
+         
+        composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        
+
+        outlinePass = new OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
+        // composer.addPass(outlinePass);
+        // outlinePass.edgeStrength = .01;
+        // outlinePass.edgeGlow = .1;
+        // outlinePass.edgeThickness = 1;
+        // outlinePass.visibleEdgeColor.set('#ff0000');
+        // outlinePass.hiddenEdgeColor.set('#0000ff');
+
+        // scene.backgroundIntensity = 1;
+        // bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        // composer.addPass(bloomPass);
+        // bloomPass.threshold = 2;
+        // bloomPass.strength = .1;
+        // bloomPass.radius = 0.4;
+
+        new RGBELoader()
+            .setPath( 'textures/equirectangular/' )
+            .load( 'kiara_1_dawn_4k.hdr', function ( texture ) {
+
+                texture.mapping = THREE.EquirectangularReflectionMapping;
+                
+                scene.background = texture;
+                scene.environment = texture;
+
+                
+
+            } );
+
+
+        stats = new Stats();
+        document.body.appendChild( stats.dom );
+
+        
+    }
+
+    let lastUpdateTime = 0;
+    const updateInterval = 1 / 60; // Update every 1/60th of a second
+
+    const customPanel = new Stats.Panel('Variable', '#ff8', '#221');
+    // stats.addPanel(customPanel);
+
+    const customPanel2 = new Stats.Panel('Variable2', '#f8f', '#212');
+    // stats.addPanel(customPanel2);
+
+    let lastTime = 0;
+    let raycastEnabled = false;
+    let lockedObject = null;
+    let grabDist = 3;
+
+    function animate() {
+        // if(isPaused) return;
+        
+        
+        requestAnimationFrame(animate);
+        
+        const time = performance.now();
+
+
+        const delta = ( time - prevTime ) / 1000;
+
+        stats.begin();
+
+        // Get the camera's direction
+        let cameraDirection = new THREE.Vector3();
+        controls.getObject().getWorldDirection(cameraDirection);
+
+        // Remove pitch and roll from the vector
+        cameraDirection.y = 0;
+        cameraDirection.normalize();
+
+        if(mouseBtn === 2) {
+            // lerp camera fov
+            camera.fov = THREE.MathUtils.lerp(camera.fov, 35, .1);
+            camera.updateProjectionMatrix();
+        } else {
+            camera.fov = THREE.MathUtils.lerp(camera.fov, 70, .1);
+            camera.updateProjectionMatrix();
+        }
+
+        let playerVelocity = new THREE.Vector3(0, 0, 0);
+        let runSpeed = 1;
+        let isJumping = false;
+        let pullStr = 1;
+
+        
+        if(keys['KeyW']){
+            playerVelocity.add(cameraDirection);
+        }
+        if(keys['KeyS']){
+            playerVelocity.sub(cameraDirection);
+        }
+        if(keys['KeyA']){
+            // Rotate camera direction 90 degrees to the left
+            let leftDirection = new THREE.Vector3().copy(cameraDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+            playerVelocity.add(leftDirection);
+        }
+        if(keys['KeyD']){
+            // Rotate camera direction 90 degrees to the right
+            let rightDirection = new THREE.Vector3().copy(cameraDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
+            playerVelocity.add(rightDirection);
+        }
+        if(keys['Space']){
+            
+            playerVelocity.add(player.up);
+            isJumping = true;
+            // console.log('jumping');
+        }
+        if(keys['ShiftLeft']){
+            runSpeed = 5;
+            pullStr = 6;
+        }
+        //reset player with r
+        if(keys['KeyR']){
+            let playerBody = physics.meshMap.get(player);
+            if(playerBody)  playerBody.activate();
+            physics.setMeshPosition(player, {x:1, y: 20, z: 3});
+
+        }
+        let sinWave = Math.sin(time / 1000);
+        if(keys['KeyE']) {
+            toggleRaycast();
+            keys['KeyE'] = false;
+        }
+
+        if(keys['KeyC']){
+            // lerp player height to half
+            player.scale.y = THREE.MathUtils.lerp(player.scale.y, 0.5, .1);
+            //rotate player to be horizontal
+            // let horizontalQuaternion = new THREE.Quaternion();
+            // horizontalQuaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+            // physics.applyRotation(player, horizontalQuaternion, 0, .25);
+
+        } else {
+            player.scale.y = THREE.MathUtils.lerp(player.scale.y, 1, .1);
+        }
+
+        if(!isMouseDown) outlinePass.selectedObjects = [];
+
+        grabDist += scrollDirection * runSpeed;
+        grabDist = Math.max(1, grabDist);
+
+        if(raycastEnabled)  playerRaycast(grabDist, 2 * pullStr);
+
+        // if(controls.isLocked)
+        physics.applyVelocity(player, playerVelocity, 0, .25, runSpeed, isJumping);
+       
+        // if(movingCubeExists)
+        physics.applyVelocity(movingCube, {x: 0, y: sinWave + .1, z: 0}, 0, .25, 1, true);
+        let emptyQuaternion = new THREE.Quaternion();
+        emptyQuaternion.setFromAxisAngle(new THREE.Vector3(1, 1, 1), 1);
+       
+        physics.applyRotation(movingCube, emptyQuaternion, 0, .25);
+        // physics.setMeshPosition(movingCube, {x: 0, y: sinWave, z: 0});
+
+        // customPanel2.update(keyIsDown, 1); // The second argument is the maximum value
+
+        if(controls.getObject().position){
+            controls.getObject().position.copy(player.position);
+
+            controls.getObject().position.y += .5 * player.scale.y;
+            // controls.getObject().position.z += 2;
+
+            let cameraDirection = new THREE.Vector3();
+
+            controls.getObject().getWorldDirection(cameraDirection);
+
+            cameraDirection.normalize();
+
+            let headQuaternion = new THREE.Quaternion();
+            headQuaternion.setFromUnitVectors(player.forward, cameraDirection);
+
+            head.setRotationFromQuaternion(headQuaternion);
+
+    
+        }
+
+   
+
+        scrollDirection = 0;
+        prevTime = time;
+            
+        composer.render();
+
+        // renderer.render(scene, camera);
+        stats.end();
+        
+ 
+    }
+
+    function toggleRaycast() {
+        console.log('toggling raycast');
+        raycastEnabled = !raycastEnabled;
+        if (!raycastEnabled) {
+            lockedObject = null;
+            outlinePass.selectedObjects = [];
+        }
+    }
+
+    function playerRaycast(distance = 1, scale = 1) {
+        if (!raycastEnabled) return;
+
+        //fire a short raycast to see if the player is looking at an object
+        let raycaster = new THREE.Raycaster();
+        let direction = new THREE.Vector3();
+        
+
+        controls.getDirection(direction);
+        let pos = controls.getObject().position;
+        // direction.multiplyScalar(2);
+
+        //ignore player and head
+        let playerAndHead = [player, head];
+        
+        raycaster.set(pos, direction.multiplyScalar(distance));
+        let intersects = raycaster.intersectObjects(scene.children, true);
+
+        intersects = intersects.filter(intersect => {
+            let objectBody = physics.meshMap.get(intersect.object);
+            return physics.meshMap.has(intersect.object) && objectBody.mass !== 0 && !playerAndHead.includes(intersect.object);
+        });
+        // console.log(intersects);
+        if(intersects.length === 0 && lockedObject == null) {
+            toggleRaycast();
+        }
+        for(let i = 0; i < intersects.length; i++){
+            let object = intersects[i].object;
+            if(!playerAndHead.includes(object)){
+                // if(physics.meshMap.has(object)) {
+                //     let objectBody = physics.meshMap.get(object);
+                //     objectBody.activate();
+                // }
+                // console.log(object);
+                //draw a border around the object
+                if (lockedObject === null) {
+                    lockedObject = object;
+                    console.log('locked object', lockedObject);
+                    
+                }
+                
+
+                
+            }
+        }
+        if (lockedObject) {
+
+            if(physics.meshMap.has(lockedObject)){
+                
+                let objectBody = physics.meshMap.get(lockedObject);
+                objectBody.activate();
+                let rayEnd = pos.clone().add(direction.multiplyScalar(.6));
+
+                let emptyQuaternion = new THREE.Quaternion();
+                emptyQuaternion.setFromAxisAngle(new THREE.Vector3(1, 1, 1), 1);
+                
+                outlinePass.selectedObjects = [lockedObject];
+                // Calculate the difference between the current position and the target position
+                let diff = rayEnd.clone().sub(lockedObject.position);
+                let velocity = diff.clone().normalize();
+                physics.applyVelocity(lockedObject, diff, 0, .5, scale, true);
+                // physics.applyRotation(lockedObject, emptyQuaternion, 0, .25);
+                
+            }
+
+        }
+        //draw the ray
+        
+        // let posAlter = pos.clone();
+        // posAlter.x += 1;
+        // let line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([pos, pos.clone().add(direction)]), new THREE.LineBasicMaterial({color: 0xff0000}));
+        // scene.add(line);
+        // let debugSphere = new THREE.Mesh(new THREE.SphereGeometry(.1), new THREE.MeshBasicMaterial({color: 0xff0000}));
+        // debugSphere.position.copy(pos.clone().add(direction));
+        // scene.add(debugSphere);
+        // setTimeout(() => {
+        //     // scene.remove(line);
+        //     scene.remove(debugSphere);
+        // }, 0);
+    }
+
+    async function loadGLTFModel(url, scene, scale = 1, position = {x: 0, y: 0, z: 0}, quaternion = new THREE.Quaternion(), hasPhysics = false, mass = 0) {
+        const loader = new GLTFLoader();
+
+        return new Promise((resolve, reject) => {
+
+            loader.load(
+                url,
+                function (gltf) {
+                    if(!hasPhysics) {
+                        gltf.scene.position.set(position.x, position.y, position.z);
+                        gltf.scene.scale.set(scale, scale, scale);
+                    }
+                    scene.add(gltf.scene);
+                    console.log(gltf.scene);
+                    gltf.scene.traverse(node => {
+                        if (!node.isMesh) return;
+
+                        if (node.material.isMeshStandardMaterial) {
+                            node.material.metalness = 1;
+                            node.material.roughness = 0.5;
+                        } else if (Array.isArray(node.material)) {
+                            node.material.forEach(mat => {
+                                if (mat.isMeshStandardMaterial) {
+                                    mat.metalness = 1;
+                                    mat.roughness = 0.5;
+                                }
+                            });
+                        }
+                        
+                        if(!hasPhysics) {
+                            node.quaternion.copy(quaternion);
+                        node.position.add(new THREE.Vector3(position.x, position.y, position.z));
+                        node.scale.set(scale, scale, scale); 
+                        }
+                       
+
+                        // Extract the vertices from the mesh
+                        const { array } = node.geometry.attributes.position;
+
+                        const vertices = [];
+                        for (let i = 0; i < array.length; i += 3) {
+                            vertices.push({ x: array[i], y: array[i + 1], z: array[i + 2] });
+                            // const vertex = { x: array[i], y: array[i + 1], z: array[i + 2] };
+                            // // Create a sphere geometry with a radius of 0.1
+                            // const sphereGeometry = new THREE.SphereGeometry(0.1);
+
+                            // // Create a basic material with a color of red
+                            // const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+                            // // Create a mesh with the sphere geometry and material
+                            // const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
+
+                            // // Position the sphere at the vertex location
+                            // sphereMesh.position.set(vertex.x, vertex.y, vertex.z);
+
+                            // // Add the sphere to the scene
+                            // scene.add(sphereMesh);
+                            // console.log(vertex);
+                        }
+
+                        
+
+                        if (hasPhysics) {
+                            let physicsMesh = physics.createConvexHullShape(vertices, mass, node, position, scale, quaternion);
+
+                            // Create a wireframe geometry from the physics mesh
+                            // const wireframeGeometry = new THREE.WireframeGeometry(physicsMesh.geometry);
+
+                            // // Create a wireframe material
+                            // const material = new THREE.LineBasicMaterial({
+                            //     color: 0xff0000
+                            // });
+
+                            // // Create a wireframe mesh
+                            // const wireframeMesh = new THREE.LineSegments(wireframeGeometry, material);
+                            // wireframeMesh.scale.copy(physicsMesh.scale);
+                            // wireframeMesh.position.copy(physicsMesh.position);
+                            // wireframeMesh.quaternion.copy(physicsMesh.quaternion);
+
+                            // // Add the wireframe mesh to the scene
+                            // scene.add(wireframeMesh);
+                        }
+                    });
+
+                    resolve(gltf.scene);
+                },
+                function (xhr) {
+                    console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                },
+                function (error) {
+                    console.error('An error happened', error);
+                }
+            );
+        });
+
+    }
+
+    function physMeshFromGLTF(gltf, scale, position) {
+        const gltfCopy = gltf.clone();
+
+        gltfCopy.traverse(node => {
+            if (!node.isMesh) return;
+
+            // Extract the vertices from the mesh
+            const { array } = node.geometry.attributes.position;
+
+            const vertices = [];
+            for (let i = 0; i < array.length; i += 3) {
+                vertices.push({ x: array[i], y: array[i + 1], z: array[i + 2] });
+            }
+
+            const worldPosition = new THREE.Vector3();
+            node.getWorldPosition(worldPosition);
+            // console.log(worldPosition);
+            worldPosition.add(new THREE.Vector3(position.x, position.y, position.z));
+
+            const nodeScale = new THREE.Vector3();
+            node.getWorldScale(nodeScale);
+
+
+            const nodeRotation = new THREE.Quaternion();
+            node.getWorldQuaternion(nodeRotation);
+
+            // Create a physics body for the entire model
+            let physicsMesh = physics.createBvhTriangleMeshShape(vertices, node, worldPosition, nodeScale, nodeRotation);
+            console.log(physicsMesh);
+
+            // Create a wireframe geometry from the physics mesh
+            const wireframeGeometry = new THREE.WireframeGeometry(physicsMesh.geometry);
+
+            // Create a wireframe material
+            const material = new THREE.LineBasicMaterial({
+                color: 0xff0000
+            });
+
+            // Create a wireframe mesh
+            const wireframeMesh = new THREE.LineSegments(wireframeGeometry, material);
+            wireframeMesh.scale.copy(physicsMesh.scale);
+            wireframeMesh.position.copy(physicsMesh.position);
+            wireframeMesh.quaternion.copy(physicsMesh.quaternion);
+
+            // Add the wireframe mesh to the scene
+            scene.add(wireframeMesh);
+        });
+    }
+
+    // function loadGLTFModel(url, scene, scale = {x: 1, y: 1, z: 1}, position = {x: 0, y: 0, z: 0}, quaternion = new THREE.Quaternion(), hasPhysics = false, isMesh = false, mass = 0) {
+    //     const loader = new GLTFLoader();
+    //     const allVertices = [];
+
+    //     loader.load(
+    //         url,
+    //         function (gltf) {
+    //             // gltf.scene.scale.set(1, 1, 1);
+    //             scene.add(gltf.scene);
+    //             // console.log(gltf.scene);
+    //             gltf.scene.traverse(node => {
+    //                 if (!node.isMesh) return;
+                    
+    //                 if (node.material.isMeshStandardMaterial) {
+    //                     node.material.metalness = 1;
+    //                     node.material.roughness = 0.5;
+    //                 } else if (Array.isArray(node.material)) {
+    //                     node.material.forEach(mat => {
+    //                         if (mat.isMeshStandardMaterial) {
+    //                             mat.metalness = 1;
+    //                             mat.roughness = 0.5;
+    //                         }
+    //                     });
+    //                 }
+
+                    
+
+    //                 // Extract the vertices from the mesh
+    //                 const { array } = node.geometry.attributes.position;
+                    
+    //                 const vertices = [];
+
+    //                 for (let i = 0; i < array.length; i += 3) {
+    //                     vertices.push({ x: array[i], y: array[i + 1], z: array[i + 2] });
+    //                 }
+
+    //                 const worldPosition = new THREE.Vector3();
+    //                 node.getWorldPosition(worldPosition);
+    //                 console.log(worldPosition);
+
+    //                 const nodeScale = new THREE.Vector3();
+    //                 node.getWorldScale(nodeScale);
+
+
+    //                 const nodeRotation = new THREE.Quaternion();
+    //                 node.getWorldQuaternion(nodeRotation);
+
+    //                 // node.position.copy(worldPosition);
+
+    //                 // node.quaternion.copy(quaternion);
+
+    //                 if (hasPhysics && isMesh) {
+                        
+                        
+    //                         let physicsMesh = physics.createBvhTriangleMeshShape(vertices, node, worldPosition, nodeScale, nodeRotation);
+    //                         console.log(node);
+                        
+                        
+                        
+
+    //                     // Create a wireframe geometry from the physics mesh
+    //                     const wireframeGeometry = new THREE.WireframeGeometry(physicsMesh.geometry);
+
+    //                     // Create a wireframe material
+    //                     const material = new THREE.LineBasicMaterial({
+    //                         color: 0xff0000
+    //                     });
+
+    //                     // Create a wireframe mesh
+    //                     const wireframeMesh = new THREE.LineSegments(wireframeGeometry, material);
+    //                     wireframeMesh.scale.copy(physicsMesh.scale);
+    //                     wireframeMesh.position.copy(physicsMesh.position);
+    //                     wireframeMesh.quaternion.copy(physicsMesh.quaternion);
+
+    //                     // Add the wireframe mesh to the scene
+    //                     scene.add(wireframeMesh);
+    //                 }
+                   
+    //                 if (hasPhysics && !isMesh) {
+                        
+    //                 console.log('creating physics body');
+    //                 const physicsMesh = physics.createConvexHullShape(vertices, 1, node, position, scale, quaternion);
+    //                 const geometry = new THREE.WireframeGeometry(physicsMesh.geometry);
+    //                 console.log(physicsMesh);
+
+    //                 // Create a wireframe material
+    //                 const material = new THREE.MeshBasicMaterial({
+    //                     color: 0xff0000,
+    //                 });
+
+    //                 // Create a wireframe mesh
+    //                 const wireframeMesh = new THREE.Mesh(geometry, material);
+
+    //                 // Add the wireframe mesh to the scene
+    //                 scene.add(wireframeMesh);
+    //             }
+    //             });
+
+    //             // Create a physics body for the mesh
+                
+                
+                
+    //         },
+    //         function (xhr) {
+    //             console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+    //         },
+    //         function (error) {
+    //             console.error('An error happened', error);
+    //         }
+    //     );
+    // }
+
+
+
+    </script>
+    
+    </html>

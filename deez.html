@@ -522,6 +522,7 @@
         loadGLTFModel('./deez/assets/sworddisp.glb', scene, 4, {x: 0, y: 3, z: 0}, gltfrotation, true, 1)
         loadGLTFModel('./deez/assets/cardload.glb', scene, 4, {x: 0, y: 2, z: 0}, gltfrotation, true, 1)
         loadGLTFModel('./deez/assets/3jspfs_map.glb', scene, 1, {x: 0, y: -3, z: 0}, new THREE.Quaternion(), true, 0);
+        // loadGLTFModel('./deez/assets/terrain.glb', scene, 1, {x: 10, y: -100, z: 0}, new THREE.Quaternion(), true, 0);
         // physMeshFromGLTF(map, 1, {x: 0, y: 0, z: 0});
 
         // loadGLTFModel('./models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf', scene, 1, {x: 4, y: 3, z: 3}, gltfrotation);
@@ -754,14 +755,14 @@
         }
 
         //reset player if they fall off the map
-        if(player.position.y < -20){
+        if(player.position.y < -200){
             resetPlayer();
         }
 
         //if any physics objects fall off the map, reset them
         // console.log(physics.meshes);
         physics.meshes.forEach(mesh => {
-            if(mesh.position.y < -20){
+            if(mesh.position.y < -200){
                 physics.setMeshPosition(mesh, {x: 0, y: 20, z: 0});
             }
         });
@@ -889,6 +890,7 @@
                     console.log(gltf.scene);
                     gltf.scene.traverse(node => {
                         if (!node.isMesh) return;
+                        if(node.userData.skip) return;
 
                         if (node.material.isMeshStandardMaterial) {
                             node.material.metalness = 1;
@@ -910,15 +912,16 @@
                     
 
                         // Extract the vertices from the mesh
-                        const { array } = node.geometry.attributes.position;
+                        const verticesArray = node.geometry.attributes.position.array;
+                        const indicesArray = node.geometry.index ? node.geometry.index.array : [];
 
-                        let lineMaterial = new THREE.LineBasicMaterial({color: 0xff0000});
+                        // let lineMaterial = new THREE.LineBasicMaterial({color: 0xff0000});
                         
 
                         const vertices = [];
-                        for (let i = 0; i < array.length; i += 3) {
-                            vertices.push({ x: array[i], y: array[i + 1], z: array[i + 2] });
-                            
+                        for (let i = 0; i < verticesArray.length; i += 3) {
+                            vertices.push({ x: verticesArray[i], y: verticesArray[i + 1], z: verticesArray[i + 2] });
+                        
                             //draw the triangle vertices
                             // let geometry = new THREE.SphereGeometry(.1);
                             // let material = new THREE.MeshBasicMaterial({color: 0xff0000});
@@ -943,16 +946,15 @@
                                 console.log('Mass:', node.userData.mass);
                             }
 
-                            let physicsMesh
+                            let physicsMesh;
                             
                             if(node.userData.meshCol) {
                                 console.log('Using mesh collision');
-                                physicsMesh = physics.createBvhTriangleMeshShape(vertices, node, nodePosition, scale, quaternion);
+                                physicsMesh = physics.createBvhTriangleMeshShape(vertices, indicesArray, node, nodePosition, scale, quaternion);
                             } else {
                                 physicsMesh = physics.createConvexHullShape(vertices, node.userData.mass ? node.userData.mass : mass, node, nodePosition, scale, quaternion);
                             }
-                        
-                            
+                                                    
                             if(mass === 0) {
                                 groundObjects.push(node);
                                 //set friction to 0

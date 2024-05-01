@@ -319,34 +319,29 @@ async function AmmoPhysics() {
 		return mesh;
 	}
 
-	function createBvhTriangleMeshShape(vertices, mesh, position, scale, quaternion) {
+	function createBvhTriangleMeshShape(vertices, indices, mesh, position, scale, quaternion) {
 		const triangleMesh = new AmmoLib.btTriangleMesh();
 		const returnShape = [];
 
-		for (let i = 0; i < vertices.length; i += 3) {
-			const vertex1 = vertices[i];
-			const vertex2 = vertices[i + 1];
-			const vertex3 = vertices[i + 2];
-		
+		for (let i = 0; i < indices.length; i += 3) {
+			const vertex1 = vertices[indices[i]];
+			const vertex2 = vertices[indices[i + 1]];
+			const vertex3 = vertices[indices[i + 2]];
+	
 			if (vertex1 && vertex2 && vertex3) {
+				// console.log('found triangle')
 				const vec1 = new AmmoLib.btVector3(vertex1.x, vertex1.y, vertex1.z);
 				const vec2 = new AmmoLib.btVector3(vertex2.x, vertex2.y, vertex2.z);
 				const vec3 = new AmmoLib.btVector3(vertex3.x, vertex3.y, vertex3.z);
-		
+	
 				triangleMesh.addTriangle(vec1, vec2, vec3);
-
-				let thisTriangle = [];
-				thisTriangle.push(vertex1);
-				thisTriangle.push(vertex2);
-				thisTriangle.push(vertex3);
-				returnShape.push(thisTriangle);
 			}
 		}
 		
 		const shape = new AmmoLib.btBvhTriangleMeshShape(triangleMesh, true, true);
 
 		shape.setLocalScaling(new AmmoLib.btVector3(scale, scale, scale));
-		shape.setMargin(0.08);
+		shape.setMargin(0.01);
 		mesh.scale.set(scale, scale, scale);
 		mesh.position.set(position.x, position.y, position.z);
 		mesh.rotation.set(0, 0, 0);

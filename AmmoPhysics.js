@@ -19,7 +19,6 @@ async function AmmoPhysics() {
 	world.setGravity( new AmmoLib.btVector3( 0, - 9.8, 0 ) );
 
 	const worldTransform = new AmmoLib.btTransform();
-
 	//
 
 	function getShape( geometry ) {
@@ -322,6 +321,7 @@ async function AmmoPhysics() {
 
 	function createBvhTriangleMeshShape(vertices, mesh, position, scale, quaternion) {
 		const triangleMesh = new AmmoLib.btTriangleMesh();
+		const returnShape = [];
 
 		for (let i = 0; i < vertices.length; i += 3) {
 			const vertex1 = vertices[i];
@@ -334,58 +334,31 @@ async function AmmoPhysics() {
 				const vec3 = new AmmoLib.btVector3(vertex3.x, vertex3.y, vertex3.z);
 		
 				triangleMesh.addTriangle(vec1, vec2, vec3);
+
+				debugDrawer.drawLine(vec1, vec2, { x: 1, y: 0, z: 0 }); // Red line
+				debugDrawer.drawLine(vec2, vec3, { x: 0, y: 1, z: 0 }); // Green line
+				debugDrawer.drawLine(vec3, vec1, { x: 0, y: 0, z: 1 }); // Blue line
+
+				let thisTriangle = [];
+				thisTriangle.push(vertex1);
+				thisTriangle.push(vertex2);
+				thisTriangle.push(vertex3);
+				returnShape.push(thisTriangle);
 			}
 		}
 		
 		const shape = new AmmoLib.btBvhTriangleMeshShape(triangleMesh, true, true);
 
-		shape.setLocalScaling(new AmmoLib.btVector3(scale.x, scale.y, scale.z));
-		shape.setMargin(.01);
-		mesh.scale.set(scale.x, scale.y, scale.z);
+		shape.setLocalScaling(new AmmoLib.btVector3(scale, scale, scale));
+		shape.setMargin(0.08);
+		mesh.scale.set(scale, scale, scale);
 		mesh.position.set(position.x, position.y, position.z);
 		mesh.rotation.set(0, 0, 0);
 		mesh.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
 		
 
 		handleMesh(mesh, 0, shape);
-		return mesh;
-	}
-
-	function createCompoundShapeFromVertices(vertices, mass, mesh, position, scale, quaternion) {
-		const compoundShape = new AmmoLib.btCompoundShape();
-
-		for (let i = 0; i < vertices.length; i += 3) {
-			const vertex1 = vertices[i];
-			const vertex2 = vertices[i + 1];
-			const vertex3 = vertices[i + 2];
-
-			if (vertex1 && vertex2 && vertex3) {
-				// Create a triangle shape
-				const triangleShape = new AmmoLib.btTriangleShape(
-					new AmmoLib.btVector3(vertex1.x, vertex1.y, vertex1.z),
-					new AmmoLib.btVector3(vertex2.x, vertex2.y, vertex2.z),
-					new AmmoLib.btVector3(vertex3.x, vertex3.y, vertex3.z)
-				);
-
-				// Create a transform for the triangle shape
-				const transform = new AmmoLib.btTransform();
-				transform.setIdentity();
-				transform.setOrigin(new AmmoLib.btVector3(0, 0, 0));  // Adjust this as needed
-
-				// Add the triangle shape to the compound shape
-				compoundShape.addChildShape(transform, triangleShape);
-			}
-		}
-
-		compoundShape.setLocalScaling(new AmmoLib.btVector3(scale.x, scale.y, scale.z));
-		compoundShape.setMargin(-0.01);
-		mesh.scale.set(scale.x, scale.y, scale.z);
-		mesh.position.set(position.x, position.y, position.z);
-		mesh.rotation.set(0, 0, 0);
-		mesh.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
-
-		handleMesh(mesh, mass, compoundShape);
-		return mesh;
+		return returnShape;
 	}
 
 	//
@@ -477,9 +450,7 @@ async function AmmoPhysics() {
 		step: step,
 		frameRate: frameRate,
 		createConvexHullShape: createConvexHullShape,
-		createBvhTriangleMeshShape: createBvhTriangleMeshShape,
-		createCompoundShapeFromVertices: createCompoundShapeFromVertices
-
+		createBvhTriangleMeshShape: createBvhTriangleMeshShape
 
 		// addCompoundMesh
 	};

@@ -204,6 +204,7 @@
         player.down = new THREE.Vector3(0, -1, 0);
         player.name = 'player';
 
+        player.flightHeight = 100;
 
         physics.addMesh(player, playerMass);
         let body = physics.meshMap.get(player)
@@ -683,7 +684,7 @@
         raycaster.ray.origin.copy(player.position);
         let intersects = raycaster.intersectObjects(groundObjects); // groundObjects is an array of your ground meshes
 
-        if (keys['Space'] && intersects.length > 0 && intersects[0].distance <= 1) {
+        if (keys['Space'] && intersects.length > 0 && intersects[0].distance <= player.flightHeight) {
             playerVelocity.add({x: 0, y: 5, z: 0});
             isJumping = true;
         }
@@ -911,25 +912,20 @@
                         // Extract the vertices from the mesh
                         const { array } = node.geometry.attributes.position;
 
+                        let lineMaterial = new THREE.LineBasicMaterial({color: 0xff0000});
+                        
+
                         const vertices = [];
                         for (let i = 0; i < array.length; i += 3) {
                             vertices.push({ x: array[i], y: array[i + 1], z: array[i + 2] });
-                            // const vertex = { x: array[i], y: array[i + 1], z: array[i + 2] };
-                            // // Create a sphere geometry with a radius of 0.1
-                            // const sphereGeometry = new THREE.SphereGeometry(0.1);
-
-                            // // Create a basic material with a color of red
-                            // const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-
-                            // // Create a mesh with the sphere geometry and material
-                            // const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
-
-                            // // Position the sphere at the vertex location
-                            // sphereMesh.position.set(vertex.x, vertex.y, vertex.z);
-
-                            // // Add the sphere to the scene
-                            // scene.add(sphereMesh);
-                            // console.log(vertex);
+                            
+                            //draw the triangle vertices
+                            // let geometry = new THREE.SphereGeometry(.1);
+                            // let material = new THREE.MeshBasicMaterial({color: 0xff0000});
+                            // let sphere = new THREE.Mesh(geometry, material);
+                            // sphere.position.set(array[i], array[i + 1], array[i + 2]);
+                            // scene.add(sphere);
+                            
                         }
 
                         
@@ -946,30 +942,38 @@
                             if (node.userData.mass) {
                                 console.log('Mass:', node.userData.mass);
                             }
+
+                            let physicsMesh
                             
+                            if(node.userData.meshCol) {
+                                console.log('Using mesh collision');
+                                physicsMesh = physics.createBvhTriangleMeshShape(vertices, node, nodePosition, scale, quaternion);
+                            } else {
+                                physicsMesh = physics.createConvexHullShape(vertices, node.userData.mass ? node.userData.mass : mass, node, nodePosition, scale, quaternion);
+                            }
                         
-                            let physicsMesh = physics.createConvexHullShape(vertices, node.userData.mass ? node.userData.mass : mass, node, nodePosition, scale, quaternion);
                             
                             if(mass === 0) {
                                 groundObjects.push(node);
                                 //set friction to 0
                                 
                             }
+                            
                             // Create a wireframe geometry from the physics mesh
                             // const wireframeGeometry = new THREE.WireframeGeometry(physicsMesh.geometry);
 
-                            // // Create a wireframe material
+                            // // // Create a wireframe material
                             // const material = new THREE.LineBasicMaterial({
                             //     color: 0xff0000
                             // });
 
-                            // // Create a wireframe mesh
+                            // // // Create a wireframe mesh
                             // const wireframeMesh = new THREE.LineSegments(wireframeGeometry, material);
                             // wireframeMesh.scale.copy(physicsMesh.scale);
                             // wireframeMesh.position.copy(physicsMesh.position);
                             // wireframeMesh.quaternion.copy(physicsMesh.quaternion);
 
-                            // // Add the wireframe mesh to the scene
+                            // // // Add the wireframe mesh to the scene
                             // scene.add(wireframeMesh);
                         }
                         

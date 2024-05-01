@@ -335,10 +335,6 @@ async function AmmoPhysics() {
 		
 				triangleMesh.addTriangle(vec1, vec2, vec3);
 
-				debugDrawer.drawLine(vec1, vec2, { x: 1, y: 0, z: 0 }); // Red line
-				debugDrawer.drawLine(vec2, vec3, { x: 0, y: 1, z: 0 }); // Green line
-				debugDrawer.drawLine(vec3, vec1, { x: 0, y: 0, z: 1 }); // Blue line
-
 				let thisTriangle = [];
 				thisTriangle.push(vertex1);
 				thisTriangle.push(vertex2);

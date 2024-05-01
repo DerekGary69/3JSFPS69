@@ -101,7 +101,7 @@
 <script type="importmap">
     {
         "imports": {
-            "three": "../build/three.module.js",
+            "three": "./build/three.module.js",
             "three/addons/": "./jsm/"
         }
     }
@@ -117,14 +117,14 @@
     import * as THREE from 'three';
     // import { Water } from'./jsm/objects/Water.js';
     // import { Reflector } from './jsm/objects/Reflector.js';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    // import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { PointerLockControls } from './PointerLockControls.js';
     import { AmmoPhysics } from './AmmoPhysics.js';
-    import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+    import { RGBELoader } from './jsm/loaders/RGBELoader.js';
 
     // import { ENABLE3D } from './fin/enable3d.ammoPhysics.0.25.4.min.js';
     // import * as Ammo from './jsm/libs/ammo.js';
-    import Stats from 'three/addons/libs/stats.module.js';
+    import Stats from './jsm/libs/stats.module.js';
     import { EffectComposer } from './jsm/postprocessing/EffectComposer.js';
     import { OutlinePass } from './jsm/postprocessing/OutlinePass.js';
     import { RenderPass } from './jsm/postprocessing/RenderPass.js';

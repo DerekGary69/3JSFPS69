@@ -138,6 +138,7 @@
     let camera, scene, renderer, stats, controls;
     let physics, position;
     let composer, bloomPass, outlinePass;
+    let groundObjects = [];
 
     let player;
     let head;
@@ -206,7 +207,7 @@
 
         physics.addMesh(player, playerMass);
         let body = physics.meshMap.get(player)
-        body.setFriction(1);
+        body.setFriction(0);
         body.setSleepingThresholds(0, 0);
         body.setActivationState(4);
 
@@ -449,6 +450,7 @@
         console.log(physics = await AmmoPhysics())
         await physics.ready
         console.log('Physics ready')
+        
     }
 
     async function createObjects(){
@@ -516,9 +518,9 @@
         gltfrotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
 
         // loadGLTFModel('./deez/assets/chest/chest.glb', scene, 4, {x: 0, y: 0, z: 3}, gltfrotation);
-        loadGLTFModel('./deez/assets/sworddisp.glb', scene, 4, {x: 0, y: 0, z: 0}, gltfrotation, true, 1)
-        loadGLTFModel('./deez/assets/cardload.glb', scene, 4, {x: 0, y: 0, z: 0}, gltfrotation, true, 1)
-        loadGLTFModel('./deez/assets/stuff2.glb', scene, 1, {x: 0, y: -3, z: 0}, new THREE.Quaternion(), true, 0);
+        loadGLTFModel('./deez/assets/sworddisp.glb', scene, 4, {x: 0, y: 3, z: 0}, gltfrotation, true, 1)
+        loadGLTFModel('./deez/assets/cardload.glb', scene, 4, {x: 0, y: 2, z: 0}, gltfrotation, true, 1)
+        loadGLTFModel('./deez/assets/3jspfs_map.glb', scene, 1, {x: 0, y: -3, z: 0}, new THREE.Quaternion(), true, 0);
         // physMeshFromGLTF(map, 1, {x: 0, y: 0, z: 0});
 
         // loadGLTFModel('./models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf', scene, 1, {x: 4, y: 3, z: 3}, gltfrotation);
@@ -574,32 +576,39 @@
         // bloomPass.radius = 0.4;
 
         new RGBELoader()
-            .setPath( 'textures/equirectangular/' )
-            .load( 'kiara_1_dawn_4k.hdr', function ( texture ) {
+        .setPath( 'textures/equirectangular/' )
+        .load( 'kiara_1_dawn_4k.hdr', function ( texture ) {
 
-                texture.mapping = THREE.EquirectangularReflectionMapping;
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            
+            scene.background = texture;
+            scene.environment = texture;
+
                 
-                scene.background = texture;
-                scene.environment = texture;
 
-                
-
-            } );
+        } );
 
 
         stats = new Stats();
         document.body.appendChild( stats.dom );
-
         
+        //make environment dark
+        // scene.background = new THREE.Color(0x000000);
+        // scene.environment = new THREE.Color(0x000000);
+
+        // point light
+        const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+        pointLight.position.set(0, 1, 0);
+        scene.add(pointLight);
     }
 
     let lastUpdateTime = 0;
     const updateInterval = 1 / 60; // Update every 1/60th of a second
 
     const customPanel = new Stats.Panel('Variable', '#ff8', '#221');
-    // stats.addPanel(customPanel);
+    stats.addPanel(customPanel);
 
-    const customPanel2 = new Stats.Panel('Variable2', '#f8f', '#212');
+    // const customPanel2 = new Stats.Panel('Variable2', '#f8f', '#212');
     // stats.addPanel(customPanel2);
 
     let lastTime = 0;
@@ -607,9 +616,15 @@
     let lockedObject = null;
     let grabDist = 3;
 
+    let lastFrameTime = performance.now();
+
     function animate() {
         // if(isPaused) return;
-        
+        const currentFrameTime = performance.now();
+        const frameTime = currentFrameTime - lastFrameTime;
+        lastFrameTime = currentFrameTime;
+
+        customPanel.update(frameTime, 200);
         
         requestAnimationFrame(animate);
         
@@ -659,11 +674,18 @@
             let rightDirection = new THREE.Vector3().copy(cameraDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
             playerVelocity.add(rightDirection);
         }
-        if(keys['Space']){
-            
-            playerVelocity.add(player.up);
+
+
+        let raycaster = new THREE.Raycaster();
+        raycaster.ray.direction.set(0, -1, 0);
+
+        // In your animation loop:
+        raycaster.ray.origin.copy(player.position);
+        let intersects = raycaster.intersectObjects(groundObjects); // groundObjects is an array of your ground meshes
+
+        if (keys['Space'] && intersects.length > 0 && intersects[0].distance <= 1) {
+            playerVelocity.add({x: 0, y: 5, z: 0});
             isJumping = true;
-            // console.log('jumping');
         }
         if(keys['ShiftLeft']){
             runSpeed = 5;
@@ -671,9 +693,7 @@
         }
         //reset player with r
         if(keys['KeyR']){
-            let playerBody = physics.meshMap.get(player);
-            if(playerBody)  playerBody.activate();
-            physics.setMeshPosition(player, {x:1, y: 20, z: 3});
+            resetPlayer();
 
         }
         let sinWave = Math.sin(time / 1000);
@@ -697,7 +717,7 @@
         if(!isMouseDown) outlinePass.selectedObjects = [];
 
         grabDist += scrollDirection * runSpeed;
-        grabDist = Math.max(1, grabDist);
+        grabDist = Math.max(2, grabDist);
 
         if(raycastEnabled)  playerRaycast(grabDist, 2 * pullStr);
 
@@ -711,8 +731,6 @@
        
         physics.applyRotation(movingCube, emptyQuaternion, 0, .25);
         // physics.setMeshPosition(movingCube, {x: 0, y: sinWave, z: 0});
-
-        // customPanel2.update(keyIsDown, 1); // The second argument is the maximum value
 
         if(controls.getObject().position){
             controls.getObject().position.copy(player.position);
@@ -734,7 +752,18 @@
     
         }
 
-   
+        //reset player if they fall off the map
+        if(player.position.y < -20){
+            resetPlayer();
+        }
+
+        //if any physics objects fall off the map, reset them
+        // console.log(physics.meshes);
+        physics.meshes.forEach(mesh => {
+            if(mesh.position.y < -20){
+                physics.setMeshPosition(mesh, {x: 0, y: 20, z: 0});
+            }
+        });
 
         scrollDirection = 0;
         prevTime = time;
@@ -745,6 +774,12 @@
         stats.end();
         
  
+    }
+
+    function resetPlayer(){
+        let playerBody = physics.meshMap.get(player);
+        if(playerBody)  playerBody.activate();
+        physics.setMeshPosition(player, {x:player.position.x, y: 20, z: player.position.z});
     }
 
     function toggleRaycast() {
@@ -865,13 +900,13 @@
                                 }
                             });
                         }
-                        
+
                         if(!hasPhysics) {
                             node.quaternion.copy(quaternion);
-                        node.position.add(new THREE.Vector3(position.x, position.y, position.z));
-                        node.scale.set(scale, scale, scale); 
+                            node.position.add(new THREE.Vector3(position.x, position.y, position.z));
+                            node.scale.set(scale, scale, scale); 
                         }
-                       
+                    
 
                         // Extract the vertices from the mesh
                         const { array } = node.geometry.attributes.position;
@@ -900,8 +935,26 @@
                         
 
                         if (hasPhysics) {
-                            let physicsMesh = physics.createConvexHullShape(vertices, mass, node, position, scale, quaternion);
+                            let nodePosition = new THREE.Vector3();
+                            node.getWorldPosition(nodePosition);
 
+                            //if there is only one node, we just use position instead of world position
+                            if(gltf.scene.children.length === 1) {
+                                nodePosition = new THREE.Vector3(position.x, position.y, position.z);
+                            }
+
+                            if (node.userData.mass) {
+                                console.log('Mass:', node.userData.mass);
+                            }
+                            
+                        
+                            let physicsMesh = physics.createConvexHullShape(vertices, node.userData.mass ? node.userData.mass : mass, node, nodePosition, scale, quaternion);
+                            
+                            if(mass === 0) {
+                                groundObjects.push(node);
+                                //set friction to 0
+                                
+                            }
                             // Create a wireframe geometry from the physics mesh
                             // const wireframeGeometry = new THREE.WireframeGeometry(physicsMesh.geometry);
 
@@ -919,6 +972,7 @@
                             // // Add the wireframe mesh to the scene
                             // scene.add(wireframeMesh);
                         }
+                        
                     });
 
                     resolve(gltf.scene);

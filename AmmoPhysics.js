@@ -118,7 +118,7 @@ async function AmmoPhysics() {
 		const rbInfo = new AmmoLib.btRigidBodyConstructionInfo( mass, motionState, shape, localInertia );
 
 		const body = new AmmoLib.btRigidBody( rbInfo );
-		// body.setFriction( 4 );
+		// body.setFriction( 0 );
 		world.addRigidBody( body );
 
 		if ( mass > 0 ) {
@@ -220,7 +220,7 @@ async function AmmoPhysics() {
 
             const newVelocity = new AmmoLib.btVector3(
                 (currentVelocity.x() * damping) + (velocity.x * multiplier),
-                (isJumping ? currentVelocity.y() * damping + (velocity.y * multiplier) : velocityIfNotJumping.y()),
+                (isJumping ? currentVelocity.y() * damping + (velocity.y) : velocityIfNotJumping.y()),
                 (currentVelocity.z() * damping) + (velocity.z * multiplier)
             );
             body.setLinearVelocity(newVelocity);
@@ -473,6 +473,7 @@ async function AmmoPhysics() {
         lockRotation: lockRotation,
 		applyRotation: applyRotation,
 		meshMap: meshMap,
+		meshes: meshes,
 		step: step,
 		frameRate: frameRate,
 		createConvexHullShape: createConvexHullShape,

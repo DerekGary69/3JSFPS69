@@ -452,7 +452,7 @@
         console.log(physics = await AmmoPhysics())
         await physics.ready
         console.log('Physics ready')
-        physics.frameRate = perfMode ? 60 : 144
+        physics.frameRate = perfMode ? 30 : 144
         
     }
 
@@ -521,8 +521,8 @@
         gltfrotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
 
         // loadGLTFModel('./deez/assets/chest/chest.glb', scene, 4, {x: 0, y: 0, z: 3}, gltfrotation);
-        loadGLTFModel('./deez/assets/sworddisp.glb', scene, 4, {x: 0, y: 3, z: 0}, gltfrotation, true, 1)
-        loadGLTFModel('./deez/assets/cardload.glb', scene, 4, {x: 0, y: 2, z: 0}, gltfrotation, true, 1)
+        // loadGLTFModel('./deez/assets/sworddisp.glb', scene, 4, {x: 0, y: 3, z: 0}, gltfrotation, true, 1)
+        // loadGLTFModel('./deez/assets/cardload.glb', scene, 4, {x: 0, y: 2, z: 0}, gltfrotation, true, 1)
         loadGLTFModel('./deez/assets/3jspfs_map.glb', scene, 1, {x: 0, y: -3, z: 0}, new THREE.Quaternion(), true, 0);
         // loadGLTFModel('./deez/assets/terrain.glb', scene, 1, {x: 10, y: -100, z: 0}, new THREE.Quaternion(), true, 0);
         // physMeshFromGLTF(map, 1, {x: 0, y: 0, z: 0});
@@ -922,12 +922,27 @@
                             node.quaternion.copy(quaternion);
                             node.position.add(new THREE.Vector3(position.x, position.y, position.z));
                             node.scale.set(scale, scale, scale); 
+                            return;
                         }
+
+                        let vertsMesh;
+                        let hasCol = false;
+
+                        if(node.children.length > 0) {
+                            //filter children to get the mesh with name ending in .col
+                            vertsMesh = node.children.filter(child => child.name.endsWith('col'))[0];
+                            console.log('found col for object', node.name);
+                            console.log(vertsMesh);
+                            hasCol = true;
+                        } else {
+                            vertsMesh = node;
+                        }
+                                
                     
 
                         // Extract the vertices from the mesh
-                        const verticesArray = node.geometry.attributes.position.array;
-                        const indicesArray = node.geometry.index ? node.geometry.index.array : [];
+                        const verticesArray = vertsMesh.geometry.attributes.position.array;
+                        const indicesArray = vertsMesh.geometry.index ? node.geometry.index.array : [];
 
                         // let lineMaterial = new THREE.LineBasicMaterial({color: 0xff0000});
                         
@@ -945,7 +960,7 @@
                             
                         }
 
-                        
+                        if(hasCol) node.remove(vertsMesh);
 
                         if (hasPhysics) {
                             let nodePosition = new THREE.Vector3();

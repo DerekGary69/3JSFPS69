@@ -147,6 +147,7 @@
     let movingCubeExists = false;
 
     let prevTime = performance.now();
+    let perfMode = false; // run in performance mode
 
     let keys = {};
     let keyIsDown = false;
@@ -204,7 +205,7 @@
         player.down = new THREE.Vector3(0, -1, 0);
         player.name = 'player';
 
-        player.flightHeight = 100;
+        player.flightHeight = 1;
 
         physics.addMesh(player, playerMass);
         let body = physics.meshMap.get(player)
@@ -451,6 +452,7 @@
         console.log(physics = await AmmoPhysics())
         await physics.ready
         console.log('Physics ready')
+        physics.frameRate = perfMode ? 60 : 144
         
     }
 
@@ -577,31 +579,38 @@
         // bloomPass.strength = .1;
         // bloomPass.radius = 0.4;
 
-        new RGBELoader()
-        .setPath( 'textures/equirectangular/' )
-        .load( 'kiara_1_dawn_4k.hdr', function ( texture ) {
 
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-            
-            scene.background = texture;
-            scene.environment = texture;
+        if(perfMode) {
+            scene.background = new THREE.Color(0x88ccee);
+            scene.environment = null;
+        } else {
+            new RGBELoader()
+            .setPath( 'textures/equirectangular/' )
+            .load( 'kiara_1_dawn_4k.hdr', function ( texture ) {
 
+                texture.mapping = THREE.EquirectangularReflectionMapping;
                 
+                scene.background = texture;
+                scene.environment = texture;
 
-        } );
+                    
+
+            } );
+        }
+
+        
 
 
         stats = new Stats();
         document.body.appendChild( stats.dom );
         
         //make environment dark
-        // scene.background = new THREE.Color(0x000000);
-        // scene.environment = new THREE.Color(0x000000);
+        
 
         // point light
-        const pointLight = new THREE.PointLight(0xffffff, 1, 100);
-        pointLight.position.set(0, 1, 0);
-        scene.add(pointLight);
+        // const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+        // pointLight.position.set(0, 1, 0);
+        // scene.add(pointLight);
     }
 
     let lastUpdateTime = 0;
@@ -892,16 +901,21 @@
                         if (!node.isMesh) return;
                         if(node.userData.skip) return;
 
-                        if (node.material.isMeshStandardMaterial) {
-                            node.material.metalness = 1;
-                            node.material.roughness = 0.5;
-                        } else if (Array.isArray(node.material)) {
-                            node.material.forEach(mat => {
-                                if (mat.isMeshStandardMaterial) {
-                                    mat.metalness = 1;
-                                    mat.roughness = 0.5;
-                                }
-                            });
+                        if (perfMode) {
+                            let randomColour = Math.floor(Math.random()*16777215).toString(16);
+                            node.material = new THREE.MeshBasicMaterial({color: parseInt(randomColour, 16)});
+                        } else {
+                            if (node.material.isMeshStandardMaterial) {
+                                node.material.metalness = 1;
+                                node.material.roughness = 0.5;
+                            } else if (Array.isArray(node.material)) {
+                                node.material.forEach(mat => {
+                                    if (mat.isMeshStandardMaterial) {
+                                        mat.metalness = 1;
+                                        mat.roughness = 0.5;
+                                    }
+                                });
+                            }
                         }
 
                         if(!hasPhysics) {

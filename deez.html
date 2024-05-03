@@ -209,7 +209,6 @@
     let movingCube;
     let movingCubeExists = false;
 
-    let prevTime = performance.now();
     let perfMode = false; // run in performance mode
 
     let keys = {};
@@ -250,7 +249,7 @@
 
         toastSetup();
         
-        animate();
+        animate(performance.now());
 
         // call createcube every 2 seconds
 
@@ -445,7 +444,7 @@
                 controls.lock();
                 window.addEventListener('keydown', keyDownListener);
                 window.addEventListener('keyup', keyUpListener);
-                animate();
+                animate(performance.now());
                 
             }
 
@@ -773,9 +772,6 @@
         // scene.add(pointLight);
     }
 
-    let lastUpdateTime = 0;
-    const updateInterval = 1 / 60; // Update every 1/60th of a second
-
     const customPanel = new Stats.Panel('Variable', '#ff8', '#221');
     stats.addPanel(customPanel);
 
@@ -786,8 +782,6 @@
     let raycastEnabled = false;
     let lockedObject = null;
     let grabDist = 3;
-
-    let lastFrameTime = performance.now();
 
     let daySpeed = 100000;
     let dayExp = 7;
@@ -807,235 +801,248 @@
         return easingFunction(t);
     }
 
-    function animate() {
+    let fps = 200;
+    let then = performance.now();
+    let interval = 1000 / fps;
+    let delta;
+
+    
+    function animate(now) {
         // if(isPaused) return;
-        const currentFrameTime = performance.now();
-        const frameTime = currentFrameTime - lastFrameTime;
-        lastFrameTime = currentFrameTime;
-
-        customPanel.update(frameTime, 200);
-        
         requestAnimationFrame(animate);
+        delta = now - then;
+
+        if (delta > interval) {
+
+            then = now - (delta % interval);
+            
+            // Calculate frameTime
+            const currentFrameTime = performance.now();
+            const frameTime = currentFrameTime - then;
+            // then = currentFrameTime;
+
+            // Update customPanel
+            customPanel.update(frameTime, 200);
+            
+            const time = performance.now();
+
+
+            
+            dayCycle = interpolate(time, daySpeed, easeInQuart );
+            globalEnvMapIntensity = dayCycle
+            // console.log(dayCycle);
+            // globalEnvMapIntensity = Math.max(0, Math.sin(time / daySpeed) ** dayExp);
+            // console.log(Math.sin(time / daySpeed) ** dayExp);
+            // if(globalEnvMapIntensity < 0 && globalEnvMapIntensity > -0.1) {
+            //     globalEnvMapIntensity = Math.abs(globalEnvMapIntensity);
+            // } else if(globalEnvMapIntensity < 0) {
+            //     globalEnvMapIntensity = 0;
+            // }
+
+            sunTarget.position.y = 10-10 * dayCycle;
+            sunTarget.position.x = 5 * dayCycle;
+            sunTarget.position.z = 5 * dayCycle;
+
+            sunLight.target.position.set(sunTarget.position.x, sunTarget.position.y, sunTarget.position.z);
+            sunLight.intensity = dayCycle;
+            // sunLightHelper.update();
+
+            if(!hasUsedFlashlight) {
+                if(dayCycle <= 0.001) {
+                    toast('Press F to toggle flashlight', 3000);
+                    hasUsedFlashlight = true;
+                }
+            } 
+            // console.log(globalEnvMapIntensity);
+            matList.forEach(mat => {
+                mat.envMapIntensity = globalEnvMapIntensity;
+            });
+            scene.backgroundIntensity = globalEnvMapIntensity;
+
+
+            stats.begin();
+
+            // Get the camera's direction
+            let cameraDirection = new THREE.Vector3();
+            controls.getObject().getWorldDirection(cameraDirection);
+
+            // Remove pitch and roll from the vector
+            cameraDirection.y = 0;
+            cameraDirection.normalize();
+
+            // flashlight.target.position.copy(cameraDirection);
+            // flashlight.updateMatrixWorld();
+
+            if(mouseBtn === 2) {
+                // lerp camera fov
+                camera.fov = THREE.MathUtils.lerp(camera.fov, 35, .1);
+                camera.updateProjectionMatrix();
+            } else {
+                camera.fov = THREE.MathUtils.lerp(camera.fov, 70, .1);
+                camera.updateProjectionMatrix();
+            }
+
+            let playerVelocity = new THREE.Vector3(0, 0, 0);
+            let runSpeed = 1;
+            let isJumping = false;
+            let pullStr = 1;
+
+            if(keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']) {
+                if (!hasMoved) {
+                    toast('Press space to jump', 3000);
+                    hasMoved = true;
+                }
+            }
+            
+            if(keys['KeyW']){
+                
+                playerVelocity.add(cameraDirection);
+            }
+            if(keys['KeyS']){
+                
+                playerVelocity.sub(cameraDirection);
+            }
+            if(keys['KeyA']){
+            
+                // Rotate camera direction 90 degrees to the left
+                let leftDirection = new THREE.Vector3().copy(cameraDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+                playerVelocity.add(leftDirection);
+            }
+            if(keys['KeyD']){
+                
+                // Rotate camera direction 90 degrees to the right
+                let rightDirection = new THREE.Vector3().copy(cameraDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
+                playerVelocity.add(rightDirection);
+            }
+
+
+            let raycaster = new THREE.Raycaster();
+            raycaster.ray.direction.set(0, -1, 0);
+
+            // In your animation loop:
+            raycaster.ray.origin.copy(player.position);
+            let intersects = raycaster.intersectObjects(groundObjects); // groundObjects is an array of your ground meshes
+
+            if (keys['Space'] && intersects.length > 0 && intersects[0].distance <= player.flightHeight) {
+                if (!hasJumped) {
+                    toast('Press shift to sprint', 3000);
+                    hasJumped = true;
+                }
+                playerVelocity.add({x: 0, y: 5, z: 0});
+                isJumping = true;
+            }
+            if(keys['ShiftLeft']){
+                if (!hasSprinted) {
+                    toast('Press E while aiming at an object to grab it', 3000);
+                    hasSprinted = true;
+                }
+                runSpeed = 5;
+                pullStr = 6;
+            }
+            //reset player with r
+            if(keys['KeyR']){
+                if(!hasReset) {
+                    // toast('Press R to reset your position at any time', 3000);
+                    hasReset = true;
+                }
+
+                resetPlayer();
+
+            }
+            let sinWave = Math.sin(time / 1000);
+            if(keys['KeyE']) {
+                if (!hasGrabbed) {
+                    toast('Press E again to release the held object. Holding Shift will increase your grab strength', 3000);
+                    toast('Scroll to adjust grab distance', 3000);
+                    hasGrabbed = true;
+                }
+                toggleRaycast();
+                keys['KeyE'] = false;
+            }
+
+            if(keys['KeyF']){
+                flashlight.visible = !flashlight.visible;
+                keys['KeyF'] = false;
+            }
+
+            if(keys['KeyC']){
+                // lerp player height to half
+                player.scale.y = THREE.MathUtils.lerp(player.scale.y, 0.5, .1);
+                //rotate player to be horizontal
+                // let horizontalQuaternion = new THREE.Quaternion();
+                // horizontalQuaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+                // physics.applyRotation(player, horizontalQuaternion, 0, .25);
+
+            } else {
+                player.scale.y = THREE.MathUtils.lerp(player.scale.y, 1, .1);
+            }
+
+            // if(!isMouseDown) outlinePass.selectedObjects = [];
+
+            grabDist += scrollDirection * runSpeed;
+            grabDist = Math.max(2, grabDist);
+
+            if(raycastEnabled)  playerRaycast(grabDist, 2 * pullStr);
+
+            // if(controls.isLocked)
+            physics.applyVelocity(player, playerVelocity, 0, .25, runSpeed, isJumping);
         
-        const time = performance.now();
-
-
-        const delta = ( time - prevTime ) / 1000;
-        dayCycle = interpolate(time, daySpeed, easeInQuart );
-        globalEnvMapIntensity = dayCycle
-        // console.log(dayCycle);
-        // globalEnvMapIntensity = Math.max(0, Math.sin(time / daySpeed) ** dayExp);
-        // console.log(Math.sin(time / daySpeed) ** dayExp);
-        // if(globalEnvMapIntensity < 0 && globalEnvMapIntensity > -0.1) {
-        //     globalEnvMapIntensity = Math.abs(globalEnvMapIntensity);
-        // } else if(globalEnvMapIntensity < 0) {
-        //     globalEnvMapIntensity = 0;
-        // }
-
-        sunTarget.position.y = 10-10 * dayCycle;
-        sunTarget.position.x = 5 * dayCycle;
-        sunTarget.position.z = 5 * dayCycle;
-
-        sunLight.target.position.set(sunTarget.position.x, sunTarget.position.y, sunTarget.position.z);
-        sunLight.intensity = dayCycle;
-        // sunLightHelper.update();
-
-        if(!hasUsedFlashlight) {
-            if(dayCycle <= 0.001) {
-                toast('Press F to toggle flashlight', 3000);
-                hasUsedFlashlight = true;
-            }
-        } 
-        // console.log(globalEnvMapIntensity);
-        matList.forEach(mat => {
-            mat.envMapIntensity = globalEnvMapIntensity;
-        });
-        scene.backgroundIntensity = globalEnvMapIntensity;
-
-
-        stats.begin();
-
-        // Get the camera's direction
-        let cameraDirection = new THREE.Vector3();
-        controls.getObject().getWorldDirection(cameraDirection);
-
-        // Remove pitch and roll from the vector
-        cameraDirection.y = 0;
-        cameraDirection.normalize();
-
-        // flashlight.target.position.copy(cameraDirection);
-        // flashlight.updateMatrixWorld();
-
-        if(mouseBtn === 2) {
-            // lerp camera fov
-            camera.fov = THREE.MathUtils.lerp(camera.fov, 35, .1);
-            camera.updateProjectionMatrix();
-        } else {
-            camera.fov = THREE.MathUtils.lerp(camera.fov, 70, .1);
-            camera.updateProjectionMatrix();
-        }
-
-        let playerVelocity = new THREE.Vector3(0, 0, 0);
-        let runSpeed = 1;
-        let isJumping = false;
-        let pullStr = 1;
-
-        if(keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']) {
-            if (!hasMoved) {
-                toast('Press space to jump', 3000);
-                hasMoved = true;
-            }
-        }
+            // if(movingCubeExists)
+            physics.applyVelocity(movingCube, {x: 0, y: sinWave + .1, z: 0}, 0, .25, 1, true);
+            let emptyQuaternion = new THREE.Quaternion();
+            emptyQuaternion.setFromAxisAngle(new THREE.Vector3(1, 1, 1), 1);
         
-        if(keys['KeyW']){
-            
-            playerVelocity.add(cameraDirection);
-        }
-        if(keys['KeyS']){
-            
-            playerVelocity.sub(cameraDirection);
-        }
-        if(keys['KeyA']){
-           
-            // Rotate camera direction 90 degrees to the left
-            let leftDirection = new THREE.Vector3().copy(cameraDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
-            playerVelocity.add(leftDirection);
-        }
-        if(keys['KeyD']){
-            
-            // Rotate camera direction 90 degrees to the right
-            let rightDirection = new THREE.Vector3().copy(cameraDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
-            playerVelocity.add(rightDirection);
-        }
+            physics.applyRotation(movingCube, emptyQuaternion, 0, .25);
+            // physics.setMeshPosition(movingCube, {x: 0, y: sinWave, z: 0});
 
+            if(controls.getObject().position){
+                controls.getObject().position.copy(player.position);
 
-        let raycaster = new THREE.Raycaster();
-        raycaster.ray.direction.set(0, -1, 0);
+                controls.getObject().position.y += .5 * player.scale.y;
+                // controls.getObject().position.z += 2;
 
-        // In your animation loop:
-        raycaster.ray.origin.copy(player.position);
-        let intersects = raycaster.intersectObjects(groundObjects); // groundObjects is an array of your ground meshes
+                let cameraQuaternion = controls.getObject().quaternion;
 
-        if (keys['Space'] && intersects.length > 0 && intersects[0].distance <= player.flightHeight) {
-            if (!hasJumped) {
-                toast('Press shift to sprint', 3000);
-                hasJumped = true;
-            }
-            playerVelocity.add({x: 0, y: 5, z: 0});
-            isJumping = true;
-        }
-        if(keys['ShiftLeft']){
-            if (!hasSprinted) {
-                toast('Press E while aiming at an object to grab it', 3000);
-                hasSprinted = true;
-            }
-            runSpeed = 5;
-            pullStr = 6;
-        }
-        //reset player with r
-        if(keys['KeyR']){
-            if(!hasReset) {
-                // toast('Press R to reset your position at any time', 3000);
-                hasReset = true;
+                // let cameraDirection = new THREE.Vector3();
+                // controls.getObject().getWorldDirection(cameraDirection);
+                // cameraDirection.normalize();
+
+                head.setRotationFromQuaternion(cameraQuaternion);
+                
+                // flashlightHelper.update();
+
+                // head.setRotationFromQuaternion(headQuaternion);
+
             }
 
-            resetPlayer();
-
-        }
-        let sinWave = Math.sin(time / 1000);
-        if(keys['KeyE']) {
-            if (!hasGrabbed) {
-                toast('Press E again to release the held object. Holding Shift will increase your grab strength', 3000);
-                toast('Scroll to adjust grab distance', 3000);
-                hasGrabbed = true;
+            //reset player if they fall off the map
+            if(player.position.y < -100){
+                if (!hasFallen) {
+                    toast('You fell off the map! Press R to reset your position at any time', 3000);
+                    hasFallen = true;
+                }
+                resetPlayer();
             }
-            toggleRaycast();
-            keys['KeyE'] = false;
+
+            //if any physics objects fall off the map, reset them
+            // console.log(physics.meshes);
+            physics.meshes.forEach(mesh => {
+                if(mesh.position.y < -100){
+                    physics.setMeshPosition(mesh, {x: 0, y: 20, z: 0});
+                    let resetQuaternion = new THREE.Quaternion();
+                    resetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 0), 0);
+                    physics.applyRotation(mesh, resetQuaternion, 0, .25);
+                }
+            });
+
+            scrollDirection = 0;
+            then = time;
+                
+            // composer.render();
+
+            renderer.render(scene, camera);
+            stats.end();
         }
-
-        if(keys['KeyF']){
-            flashlight.visible = !flashlight.visible;
-            keys['KeyF'] = false;
-        }
-
-        if(keys['KeyC']){
-            // lerp player height to half
-            player.scale.y = THREE.MathUtils.lerp(player.scale.y, 0.5, .1);
-            //rotate player to be horizontal
-            // let horizontalQuaternion = new THREE.Quaternion();
-            // horizontalQuaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-            // physics.applyRotation(player, horizontalQuaternion, 0, .25);
-
-        } else {
-            player.scale.y = THREE.MathUtils.lerp(player.scale.y, 1, .1);
-        }
-
-        // if(!isMouseDown) outlinePass.selectedObjects = [];
-
-        grabDist += scrollDirection * runSpeed;
-        grabDist = Math.max(2, grabDist);
-
-        if(raycastEnabled)  playerRaycast(grabDist, 2 * pullStr);
-
-        // if(controls.isLocked)
-        physics.applyVelocity(player, playerVelocity, 0, .25, runSpeed, isJumping);
-       
-        // if(movingCubeExists)
-        physics.applyVelocity(movingCube, {x: 0, y: sinWave + .1, z: 0}, 0, .25, 1, true);
-        let emptyQuaternion = new THREE.Quaternion();
-        emptyQuaternion.setFromAxisAngle(new THREE.Vector3(1, 1, 1), 1);
-       
-        physics.applyRotation(movingCube, emptyQuaternion, 0, .25);
-        // physics.setMeshPosition(movingCube, {x: 0, y: sinWave, z: 0});
-
-        if(controls.getObject().position){
-            controls.getObject().position.copy(player.position);
-
-            controls.getObject().position.y += .5 * player.scale.y;
-            // controls.getObject().position.z += 2;
-
-            let cameraQuaternion = controls.getObject().quaternion;
-
-            // let cameraDirection = new THREE.Vector3();
-            // controls.getObject().getWorldDirection(cameraDirection);
-            // cameraDirection.normalize();
-
-            head.setRotationFromQuaternion(cameraQuaternion);
-            
-            // flashlightHelper.update();
-
-            // head.setRotationFromQuaternion(headQuaternion);
-
-        }
-
-        //reset player if they fall off the map
-        if(player.position.y < -100){
-            if (!hasFallen) {
-                toast('You fell off the map! Press R to reset your position at any time', 3000);
-                hasFallen = true;
-            }
-            resetPlayer();
-        }
-
-        //if any physics objects fall off the map, reset them
-        // console.log(physics.meshes);
-        physics.meshes.forEach(mesh => {
-            if(mesh.position.y < -100){
-                physics.setMeshPosition(mesh, {x: 0, y: 20, z: 0});
-                let resetQuaternion = new THREE.Quaternion();
-                resetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 0), 0);
-                physics.applyRotation(mesh, resetQuaternion, 0, .25);
-            }
-        });
-
-        scrollDirection = 0;
-        prevTime = time;
-            
-        // composer.render();
-
-        renderer.render(scene, camera);
-        stats.end();
-        
  
     }
 

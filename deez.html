@@ -26,6 +26,10 @@
         </div>
     </div>
 
+    <div id="toast">
+        <p id="toast-text">Welcome</p>
+    </div>
+
     <style>
         * {
             margin: 0;
@@ -93,6 +97,41 @@
             margin-left: -5px;
             margin-top: -5px;
         }
+
+        #toast {
+            position: absolute;
+            bottom: 20%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 1em;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 5px;
+            z-index: 2;
+            max-width: 80vw;
+            text-align: center;
+            font-size: 1.5em;
+            pointer-events: none;
+            transition: all 1s;
+            opacity: 0;
+        }
+
+        #toast.show {
+            opacity: 1;
+        }
+
+        /* #toast.fade {
+            opacity: 0;
+        } */
+
+        /* @keyframes fade {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+            }
+        } */
     </style>
 </body>
 <script src="./jsm/libs/ammo.js"></script>
@@ -115,6 +154,8 @@
 <script type="module">
     
     import * as THREE from 'three';
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
     // import { Water } from'./jsm/objects/Water.js';
     // import { Reflector } from './jsm/objects/Reflector.js';
     // import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -126,22 +167,44 @@
     // import * as Ammo from './jsm/libs/ammo.js';
     import Stats from './jsm/libs/stats.module.js';
     import { EffectComposer } from './jsm/postprocessing/EffectComposer.js';
-    import { OutlinePass } from './jsm/postprocessing/OutlinePass.js';
+    import { OutputPass } from './jsm/postprocessing/OutputPass.js';
+    // import { SAOPass } from './jsm/postprocessing/SAOPass.js';
+    import { SSAOPass } from './jsm/postprocessing/SSAOPass.js';
+
+
     import { RenderPass } from './jsm/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from './jsm/postprocessing/UnrealBloomPass.js';
     import { ShaderPass } from './jsm/postprocessing/ShaderPass.js';
     import { GLTFLoader } from './jsm/loaders/GLTFLoader.js';
 
     // const { AmmoPhysics, PhysicsLoader } = ENABLE3D
-    
+    let toastDiv;
+    let toastText;
+    let toastQueue = [];
+
+    let firstClick = false;
+    let hasMoved = false;
+    let hasJumped = false;
+    let hasRotated = false;
+    let hasSprinted = false;
+    let hasGrabbed = false;
+    let hasFallen = false;
+    let hasReset = false;
+    let hasUsedFlashlight = false;
 
     let camera, scene, renderer, stats, controls;
     let physics, position;
-    let composer, bloomPass, outlinePass;
+    let composer, bloomPass, ssaoPass, outputPass;
     let groundObjects = [];
 
     let player;
     let head;
+    let flashlight;
+    let flashlightHelper;
+
+    let sunTarget;
+    let sunLight;
+    let sunLightHelper;
 
     let movingCube;
     let movingCubeExists = false;
@@ -152,7 +215,10 @@
     let keys = {};
     let keyIsDown = false;
 
-    let isPaused = false;
+    let isPaused = true;
+
+    let globalEnvMapIntensity = .1;
+    let matList = [];
 
 
     init()
@@ -168,7 +234,7 @@
         // let physics = await AmmoPhysics();
         // let position = new THREE.Vector3();
 
-        
+       
 
         cameraSetup();
         sceneSetup();
@@ -181,6 +247,8 @@
         createPlayer();
 
         keyListener();
+
+        toastSetup();
         
         animate();
 
@@ -188,7 +256,47 @@
 
     }
 
-    let cubeMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+   
+
+    function toast(message, duration = 3000) {
+        if (toastDiv.classList.contains('show')) {
+            toastQueue.push({ message, duration });
+            return;
+        }
+
+        toastText.innerText = message;
+        toastDiv.classList.add('show');
+
+        setTimeout(() => {
+            toastDiv.classList.remove('show');
+            if (toastQueue.length > 0) {
+                let nextToast = toastQueue.shift();
+                toast(nextToast.message, nextToast.duration);
+            } else {
+                toastDiv.classList.remove('show');
+            }
+        }, duration);
+        
+    }
+
+    function endToast() {
+        toastDiv.classList.remove('show');
+    }
+
+    function toastSetup() {
+        toastDiv = document.getElementById('toast');
+        toastText = document.getElementById('toast-text');
+        window.addEventListener('click', function() {
+            toast('Welcome to the game');
+            let currentCameraRotation = controls.getObject().rotation;
+            if (!hasRotated) {
+                toast('Use the mouse to look around', 3000);
+            }
+            
+        }, { once: true });
+        
+        
+    }
     let feet;
 
     async function createPlayer(){
@@ -196,6 +304,8 @@
         player = createCube({x: 0.5, y: 1, z: 0.5}, {x: 0, y: 1, z: 0}, new THREE.MeshStandardMaterial( { color: 0xff0000 } ));
         // let playerShape = physics.getShape(player.geometry)
         let playerMass = 1;
+        player.castShadow = true;
+        player.receiveShadow = true;
 
         player.forward = new THREE.Vector3(0, 0, -1);
         player.backward = new THREE.Vector3(0, 0, 1);
@@ -222,6 +332,8 @@
 
         head = createCube({x: 0.6, y: 0.6, z: 0.6}, {x: 0, y: .3, z: 0}, new THREE.MeshStandardMaterial( { color: 0x00ff00 } ));
         head.name = 'head';
+        head.castShadow = false;
+        head.receiveShadow = false;
         
 
 
@@ -248,6 +360,30 @@
             `,
             transparent: true
         });
+
+        flashlight = new THREE.SpotLight(0xffffff, 100, 10, Math.PI / 6, 1, 1);
+        flashlight.position.set(0, 0, -.6);
+        flashlight.castShadow = true;
+        flashlight.visible = false;
+
+        flashlight.shadow.bias = -0.0001;
+        // flashlight.shadow.camera.near = .1;
+        // flashlight.shadow.camera.far = 100;
+
+        // flashlight.shadow.mapSize.width = 2048;
+        // flashlight.shadow.mapSize.height = 2048;
+
+        let flashlightTarget = new THREE.Object3D();
+        flashlightTarget.position.set(0, 0, -2); // Position the target 1 unit in front of the head
+
+        head.add(flashlightTarget);
+        head.add(flashlight);
+
+        flashlight.target = flashlightTarget;
+
+        // flashlightHelper = new THREE.SpotLightHelper(flashlight);
+        // scene.add(flashlightHelper);
+        
 
         // feet = createCube(
         //     {x: 0.5, y: 0.1, z: 0.5}, 
@@ -279,6 +415,14 @@
         //     // Chrome requires returnValue to be set
         //     e.returnValue = 'Really want to quit the game?';
         // };
+
+        window.addEventListener('mousemove', function() {
+            if (!hasRotated && !isPaused) {
+                
+                toast('Nice work. Use WASD to move.', 3000);
+                hasRotated = true;
+            }
+        });
 
         let keyDownListener = function(event) {
             event.preventDefault();
@@ -398,7 +542,7 @@
     function sceneSetup(){
         scene = new THREE.Scene();
         scene.background = new THREE.Color( 0x88ccee );
-        // scene.fog = new THREE.FogExp2( 0xbfa18a, 0, 50 );
+        scene.fog = new THREE.FogExp2( 0xbfa18a, 0, 50 );
         let grid = new THREE.GridHelper( 10, 10 );
         scene.add( grid );
 
@@ -409,40 +553,41 @@
     }
 
     function lightSetup(){
+        // this will set up the lighting for the scene
+        // namely, a sun light and ambient light
+        // const ambientLight = new THREE.AmbientLight(0xffffff, .1);
+        // scene.add(ambientLight);
+
+        //hemi light
+        // const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444);
+        // hemiLight.position.set(0, 20, 0);
+        // scene.add(hemiLight);
+
+
+        sunLight = new THREE.DirectionalLight(0xFFBAA0, 1);
+        sunLight.position.set(5, 10, 5);
+        sunLight.castShadow = true;
+        sunLight.shadow.bias = -0.0001;
+        const size = 50; 
+        sunLight.shadow.camera.left = -size;
+        sunLight.shadow.camera.right = size;
+        sunLight.shadow.camera.top = size;
+        sunLight.shadow.camera.bottom = -size;
+        sunLight.shadow.mapSize.width = 2048; // Default is 512
+        sunLight.shadow.mapSize.height = 2048; // Default is 512
+
+        sunTarget = new THREE.Object3D();
+        sunTarget.position.set(0, 0, 0);
+
+        sunLight.target.position.set(sunTarget.position.x, sunTarget.position.y, sunTarget.position.z);
+        scene.add(sunLight);
+
+        //sun helper
+        sunLightHelper = new THREE.DirectionalLightHelper(sunLight, 1, 0xff0000);
+        // scene.add(sunLightHelper);
+
         
 
-        // const hemiLight = new THREE.HemisphereLight();
-        // hemiLight.position.set( 0, 20, 0 );
-        // hemiLight.intensity = 1;
-
-        // scene.add( hemiLight );
-
-        // const dirLight = new THREE.DirectionalLight( 0xffffff, 3 );
-        // dirLight.position.set( 5, 5, 5 );
-        // dirLight.target.position.set(0, 0, 0);
-        // dirLight.castShadow = true;
-        // dirLight.shadow.camera.zoom = 2;
-        // scene.add( dirLight );
-        // const sunLight = new THREE.DirectionalLight(0xDDDDCC, 1);
-        
-        // sunLight.rotation.x = Math.PI / 2;
-        // sunLight.target.position.set(1, 1, 0);
-        // sunLight.castShadow = true;
-        // sunLight.shadow.camera.near = 0.01;
-        // sunLight.shadow.camera.far = 1000;
-        // sunLight.shadow.camera.right = 30;
-        // sunLight.shadow.camera.left = - 30;
-        // sunLight.shadow.camera.top	= 30;
-        // sunLight.shadow.camera.bottom = - 30;
-        // sunLight.shadow.mapSize.width = 3096;
-        // sunLight.shadow.mapSize.height = 3096;
-        // sunLight.shadow.radius = 6;
-        // sunLight.shadow.bias = - 0.00006;
-        // sunLight.position.set(0, 10, 20);
-        // scene.add(sunLight);
-
-        // let sunHelper = new THREE.DirectionalLightHelper(sunLight, 1);
-        // scene.add(sunHelper);
 
            
     }
@@ -457,7 +602,8 @@
     }
 
     async function createObjects(){
-        const material = new THREE.MeshStandardMaterial();
+        const material = new THREE.MeshStandardMaterial( { color: 0xffffff, roughness: 0, metalness: 0, envMapIntensity: globalEnvMapIntensity } );
+        matList.push(material);
         
         let cube1 = createCube({x: 0.25, y: 0.25, z: 0.25}, {x: 3, y: 5, z: 0}, material, 1);
         physics.addMesh( cube1, 1 );
@@ -468,8 +614,10 @@
             roughness: 0.5,
             metalness: 0.5,
             transparent: true,
-            opacity: 0.5
+            opacity: 0.5,
+            envMapIntensity: globalEnvMapIntensity
         });
+        matList.push(floorMaterial);
 
         const floor = new THREE.Mesh(
             new THREE.BoxGeometry( 10, 5, 10 ),
@@ -535,36 +683,43 @@
 
    
 
-    function createCube(size, position, material, mass){
+    function createCube(size, position, material, mass, destination){
         const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
         const cube = new THREE.Mesh(geometry, material);
         cube.position.set(position.x, position.y, position.z);
-        cube.castShadow = true;
+        // cube.castShadow = true;
         cube.receiveShadow = true;
         cube.userData.physics = { mass: mass };
-        scene.add(cube);
+        destination ? destination.add(cube) : scene.add(cube);
         
         return cube;
     }
 
     function renderSetup(){
-        renderer = new THREE.WebGLRenderer( { antialias: true } );
+        renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
         renderer.setPixelRatio( window.devicePixelRatio );
         renderer.setSize( window.innerWidth, window.innerHeight );
         
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.type = THREE.VSMShadowMap;
 
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1;
+        renderer.toneMappingExposure = 0.5;
         
         document.body.appendChild( renderer.domElement );
          
         composer = new EffectComposer(renderer);
         composer.addPass(new RenderPass(scene, camera));
+
+        // const ssaoPass = new SSAOPass( scene, camera, window.innerWidt, window.innerHeight );
+        // composer.addPass( ssaoPass );
+        // const outputPass = new OutputPass();
+        // composer.addPass( outputPass );
         
 
-        outlinePass = new OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
+        
+
+        // outlinePass = new OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
         // composer.addPass(outlinePass);
         // outlinePass.edgeStrength = .01;
         // outlinePass.edgeGlow = .1;
@@ -590,16 +745,21 @@
 
                 texture.mapping = THREE.EquirectangularReflectionMapping;
                 
+                
                 scene.background = texture;
                 scene.environment = texture;
-
                     
 
             } );
         }
-
+        scene.backgroundIntensity = globalEnvMapIntensity
+        // scene.backgroundBlurriness = 0;
+        // console.log(scene.environmentIntensity);
         
-
+        // scene.background = new THREE.Color(0x88ccee);
+        
+        //make the fog transparent
+        // scene.fog = new THREE.Fog(0xbfa1cc, 0, 50);
 
         stats = new Stats();
         document.body.appendChild( stats.dom );
@@ -629,6 +789,24 @@
 
     let lastFrameTime = performance.now();
 
+    let daySpeed = 100000;
+    let dayExp = 7;
+
+    let dayCycle;
+
+    function easeInOutQuad(t) {
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    }
+
+    function easeInQuart(t) {
+        return t * t * t * t;
+    }
+
+    function interpolate(time, daySpeed, easingFunction) {
+        const t = Math.sin(time / daySpeed) * 0.5 + 0.5; // Map sin(-1 to 1) to (0 to 1)
+        return easingFunction(t);
+    }
+
     function animate() {
         // if(isPaused) return;
         const currentFrameTime = performance.now();
@@ -643,6 +821,37 @@
 
 
         const delta = ( time - prevTime ) / 1000;
+        dayCycle = interpolate(time, daySpeed, easeInQuart );
+        globalEnvMapIntensity = dayCycle
+        // console.log(dayCycle);
+        // globalEnvMapIntensity = Math.max(0, Math.sin(time / daySpeed) ** dayExp);
+        // console.log(Math.sin(time / daySpeed) ** dayExp);
+        // if(globalEnvMapIntensity < 0 && globalEnvMapIntensity > -0.1) {
+        //     globalEnvMapIntensity = Math.abs(globalEnvMapIntensity);
+        // } else if(globalEnvMapIntensity < 0) {
+        //     globalEnvMapIntensity = 0;
+        // }
+
+        sunTarget.position.y = 10-10 * dayCycle;
+        sunTarget.position.x = 5 * dayCycle;
+        sunTarget.position.z = 5 * dayCycle;
+
+        sunLight.target.position.set(sunTarget.position.x, sunTarget.position.y, sunTarget.position.z);
+        sunLight.intensity = dayCycle;
+        // sunLightHelper.update();
+
+        if(!hasUsedFlashlight) {
+            if(dayCycle <= 0.001) {
+                toast('Press F to toggle flashlight', 3000);
+                hasUsedFlashlight = true;
+            }
+        } 
+        // console.log(globalEnvMapIntensity);
+        matList.forEach(mat => {
+            mat.envMapIntensity = globalEnvMapIntensity;
+        });
+        scene.backgroundIntensity = globalEnvMapIntensity;
+
 
         stats.begin();
 
@@ -653,6 +862,9 @@
         // Remove pitch and roll from the vector
         cameraDirection.y = 0;
         cameraDirection.normalize();
+
+        // flashlight.target.position.copy(cameraDirection);
+        // flashlight.updateMatrixWorld();
 
         if(mouseBtn === 2) {
             // lerp camera fov
@@ -668,19 +880,29 @@
         let isJumping = false;
         let pullStr = 1;
 
+        if(keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']) {
+            if (!hasMoved) {
+                toast('Press space to jump', 3000);
+                hasMoved = true;
+            }
+        }
         
         if(keys['KeyW']){
+            
             playerVelocity.add(cameraDirection);
         }
         if(keys['KeyS']){
+            
             playerVelocity.sub(cameraDirection);
         }
         if(keys['KeyA']){
+           
             // Rotate camera direction 90 degrees to the left
             let leftDirection = new THREE.Vector3().copy(cameraDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
             playerVelocity.add(leftDirection);
         }
         if(keys['KeyD']){
+            
             // Rotate camera direction 90 degrees to the right
             let rightDirection = new THREE.Vector3().copy(cameraDirection).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
             playerVelocity.add(rightDirection);
@@ -695,22 +917,45 @@
         let intersects = raycaster.intersectObjects(groundObjects); // groundObjects is an array of your ground meshes
 
         if (keys['Space'] && intersects.length > 0 && intersects[0].distance <= player.flightHeight) {
+            if (!hasJumped) {
+                toast('Press shift to sprint', 3000);
+                hasJumped = true;
+            }
             playerVelocity.add({x: 0, y: 5, z: 0});
             isJumping = true;
         }
         if(keys['ShiftLeft']){
+            if (!hasSprinted) {
+                toast('Press E while aiming at an object to grab it', 3000);
+                hasSprinted = true;
+            }
             runSpeed = 5;
             pullStr = 6;
         }
         //reset player with r
         if(keys['KeyR']){
+            if(!hasReset) {
+                // toast('Press R to reset your position at any time', 3000);
+                hasReset = true;
+            }
+
             resetPlayer();
 
         }
         let sinWave = Math.sin(time / 1000);
         if(keys['KeyE']) {
+            if (!hasGrabbed) {
+                toast('Press E again to release the held object. Holding Shift will increase your grab strength', 3000);
+                toast('Scroll to adjust grab distance', 3000);
+                hasGrabbed = true;
+            }
             toggleRaycast();
             keys['KeyE'] = false;
+        }
+
+        if(keys['KeyF']){
+            flashlight.visible = !flashlight.visible;
+            keys['KeyF'] = false;
         }
 
         if(keys['KeyC']){
@@ -725,7 +970,7 @@
             player.scale.y = THREE.MathUtils.lerp(player.scale.y, 1, .1);
         }
 
-        if(!isMouseDown) outlinePass.selectedObjects = [];
+        // if(!isMouseDown) outlinePass.selectedObjects = [];
 
         grabDist += scrollDirection * runSpeed;
         grabDist = Math.max(2, grabDist);
@@ -749,42 +994,62 @@
             controls.getObject().position.y += .5 * player.scale.y;
             // controls.getObject().position.z += 2;
 
-            let cameraDirection = new THREE.Vector3();
+            let cameraQuaternion = controls.getObject().quaternion;
 
-            controls.getObject().getWorldDirection(cameraDirection);
+            // let cameraDirection = new THREE.Vector3();
+            // controls.getObject().getWorldDirection(cameraDirection);
+            // cameraDirection.normalize();
 
-            cameraDirection.normalize();
+            head.setRotationFromQuaternion(cameraQuaternion);
+            
+            // flashlightHelper.update();
 
-            let headQuaternion = new THREE.Quaternion();
-            headQuaternion.setFromUnitVectors(player.forward, cameraDirection);
+            // head.setRotationFromQuaternion(headQuaternion);
 
-            head.setRotationFromQuaternion(headQuaternion);
-
-    
         }
 
         //reset player if they fall off the map
-        if(player.position.y < -200){
+        if(player.position.y < -100){
+            if (!hasFallen) {
+                toast('You fell off the map! Press R to reset your position at any time', 3000);
+                hasFallen = true;
+            }
             resetPlayer();
         }
 
         //if any physics objects fall off the map, reset them
         // console.log(physics.meshes);
         physics.meshes.forEach(mesh => {
-            if(mesh.position.y < -200){
+            if(mesh.position.y < -100){
                 physics.setMeshPosition(mesh, {x: 0, y: 20, z: 0});
+                let resetQuaternion = new THREE.Quaternion();
+                resetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 0), 0);
+                physics.applyRotation(mesh, resetQuaternion, 0, .25);
             }
         });
 
         scrollDirection = 0;
         prevTime = time;
             
-        composer.render();
+        // composer.render();
 
-        // renderer.render(scene, camera);
+        renderer.render(scene, camera);
         stats.end();
         
  
+    }
+
+    function createOutline(mesh, scale, color) {
+        // Create the outline material
+        const outlineMaterial = new THREE.MeshBasicMaterial({ color: color, side: THREE.BackSide });
+
+        // Create the instanced mesh
+        const instance = new THREE.InstancedMesh(mesh.geometry, outlineMaterial, 1);
+
+        // Scale the instance
+        instance.setMatrixAt(0, new THREE.Matrix4().makeScale(scale, scale, scale));
+
+        return instance;
     }
 
     function resetPlayer(){
@@ -797,11 +1062,15 @@
         console.log('toggling raycast');
         raycastEnabled = !raycastEnabled;
         if (!raycastEnabled) {
+            if (lockedObject) lockedObject.remove(outline);
             lockedObject = null;
-            outlinePass.selectedObjects = [];
+            // object.remove(outline);
+
         }
     }
 
+    let outline;
+    
     function playerRaycast(distance = 1, scale = 1) {
         if (!raycastEnabled) return;
 
@@ -840,7 +1109,8 @@
                 if (lockedObject === null) {
                     lockedObject = object;
                     console.log('locked object', lockedObject);
-                    
+                    outline = createOutline(object, 1.05, 0xffffff);
+                    object.add(outline);
                 }
                 
 
@@ -858,7 +1128,7 @@
                 let emptyQuaternion = new THREE.Quaternion();
                 emptyQuaternion.setFromAxisAngle(new THREE.Vector3(1, 1, 1), 1);
                 
-                outlinePass.selectedObjects = [lockedObject];
+                // outlinePass.selectedObjects = [lockedObject];
                 // Calculate the difference between the current position and the target position
                 let diff = rayEnd.clone().sub(lockedObject.position);
                 let velocity = diff.clone().normalize();
@@ -903,22 +1173,31 @@
 
                         if (perfMode) {
                             let randomColour = Math.floor(Math.random()*16777215).toString(16);
-                            node.material = new THREE.MeshBasicMaterial({color: parseInt(randomColour, 16)});
+                            node.material = new THREE.MeshBasicMaterial({color: parseInt(randomColour, 16), envMapIntensity: globalEnvMapIntensity});
+                            matList.push(node.material);
                         } else {
                             if (node.material.isMeshStandardMaterial) {
-                                node.material.metalness = 1;
+                                node.material.metalness = 0;
                                 node.material.roughness = 0.5;
+                                node.material.envMapIntensity = globalEnvMapIntensity;
+                                matList.push(node.material);
                             } else if (Array.isArray(node.material)) {
                                 node.material.forEach(mat => {
                                     if (mat.isMeshStandardMaterial) {
-                                        mat.metalness = 1;
+                                        mat.metalness = 0;
                                         mat.roughness = 0.5;
+                                        mat.envMapIntensity = globalEnvMapIntensity;
+                                        matList.push(mat);
                                     }
                                 });
                             }
+                            node.castShadow = true;
+                            node.receiveShadow = true;
+
+
                         }
 
-                        if(!hasPhysics) {
+                        if(!hasPhysics || node.userData.noPhysics) {
                             node.quaternion.copy(quaternion);
                             node.position.add(new THREE.Vector3(position.x, position.y, position.z));
                             node.scale.set(scale, scale, scale); 
@@ -962,7 +1241,7 @@
 
                         if(hasCol) node.remove(vertsMesh);
 
-                        if (hasPhysics) {
+                        if (hasPhysics && !node.userData.noPhysics) {
                             let nodePosition = new THREE.Vector3();
                             node.getWorldPosition(nodePosition);
 
